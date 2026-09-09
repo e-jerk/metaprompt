@@ -69,7 +69,7 @@ exec bun /app/packages/runner/src/mp.ts
   kubectl exec -it ${process.env.HOSTNAME ?? "pod"} -c harness -- /workspace/.mp/attach
   /workspace/.mp/attach opencode | cursor | claude | codex | shell
 
-  Always-on MCP: plane, party, jj. Spawn children with job.spawn, never vendor Task/subagent.
+  Always-on MCP: plane, party, jj. GitHub issues/PRs: gh.issue.* / gh.pr.* on the plane. Spawn children with job.spawn, never vendor Task/subagent.
 `;
   await writeFile(`${cwd}/.mp/MOTD`, motd);
   await writeFile("/tmp/session-ready", "ok\n");

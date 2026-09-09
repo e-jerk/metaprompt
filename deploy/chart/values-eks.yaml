@@ -16,6 +16,15 @@ auth:
         - repository_owner
         - job_workflow_ref
   staticUsers: []
+  apps:
+    tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    github:
+      grant: github-app
+      appId: ""
+      installationId: ""
+      # Or grant: token-exchange with tokenUrl pointing at octo-sts / github-sts that trusts the EKS OIDC issuer.
+      tokenUrl: ""
+      audience: ""
 
 storage:
   mode: hostpath
@@ -35,6 +44,10 @@ bedrock:
     qualifier: ""
     gatewayUrl: ""
     gatewayArn: ""
+    planeExternalUrl: ""
+    memoryArn: ""
+    memoryNamespace: "/actors/{actorId}"
+    awsSkillPaths: []
     attachPlaneMcp: true
     enableBrowser: false
     enableCodeInterpreter: false

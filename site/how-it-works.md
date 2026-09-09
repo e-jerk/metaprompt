@@ -214,7 +214,7 @@ Git credential helpers are emptied. Fetch/push uses minted creds.
 | `agentcore` | `…/runner:latest` | `agentcore` (Job-only; needs AgentCore ARN) |
 | `stub` | `…/stub:latest` | `none` (Jobs/smoke only) |
 
-Local k3s: Bedrock and AgentCore off. Disallowed tools: Task, Agent, subagent. AgentCore Harness/Runtime is invoked from the Job (SigV4 / IRSA). Gateway can appear in the MCP catalog as `agentcore-gateway`. Children still use `job.spawn`.
+Local k3s: Bedrock and AgentCore off. Disallowed tools: Task, Agent, subagent. AgentCore is Job-only: the runner Job calls `InvokeHarness` / `InvokeAgentRuntime` (SigV4 / IRSA) with `actorId` = owner, stable `runtimeSessionId`, W3C `traceparent` / `baggage`, plane MCP at `planeExternalUrl`, optional Gateway / Browser / Code Interpreter / Memory / skills. The agent loop is the AWS microVM. Gateway can appear in the MCP catalog as `agentcore-gateway`. Children still use `job.spawn`.
 
 **Assets** after `asset.list`: `assets: ["eval-set"]`, ACL `readers`, read-only mount (`pvc:`, `hostPath:`, `configMap:`, `secret:`, `emptyDir` / `emptyDir:Memory`).
 
@@ -224,13 +224,13 @@ Local k3s: Bedrock and AgentCore off. Disallowed tools: Task, Agent, subagent. A
 
 A party is the room for a root and descendants. `coord.handoff` creates another run. `job.spawn` may nest a party. Summaries roll up (capped). Kill can cascade. Share is ACL. Swarm and adversary prompt patterns: [How to use it](#how-to-use-it).
 
-Memory (optional Postgres + pgvector) is plane-only. Scopes: `user`, `party`, `repo`. k3s embedding default is `hash`.
+Memory (optional Postgres + pgvector) is plane-only. Scopes: `user`, `party`, `repo`. k3s embedding default is `hash`. AgentCore Jobs can also use AgentCore Memory (`memoryArn`, namespace `/actors/{actorId}`) and write the run summary back with `memory.put` on the party.
 
-VCS is jj-first. `jj.git.fetch` / `push` mint via `vcs.cred.mint`.
+VCS is jj-first. `jj.git.fetch` / `push` mint via `vcs.cred.mint` (GitHub App / OIDC token when configured; otherwise a placeholder — the long-lived PAT is never given to Jobs). GitHub issues and PRs are plane tools (`gh.issue.*`, `gh.pr.*`).
 
 ## Auth
 
-Local k3s: `local-dev-token` (admin), `alice-token`, `bob-token`. EKS/GKE: GitHub Enterprise OIDC JWT (`actor` / `sub`). Not IRSA. Bedrock InvokeModel and AgentCore invoke use the **job** service account (IRSA) when enabled.
+Local k3s: `local-dev-token` (admin), `alice-token`, `bob-token`. EKS/GKE have three identities: (1) **users → plane** GitHub Enterprise OIDC JWT (`actor` / `sub`); (2) **Jobs → AWS** IRSA on the job service account (Bedrock / AgentCore); (3) **plane → GitHub and other apps** GitHub App or EKS ServiceAccount OIDC token exchange (`app.cred.mint`). They coexist. The App private key and workload token stay on the mcp pod, never on Jobs.
 
 ## Limits (defaults)
 

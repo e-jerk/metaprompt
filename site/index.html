@@ -281,7 +281,7 @@ bash scripts/session-up.sh          # or: session-up.sh opencode|cursor|claude-c
       <tr><td><code>stub</code></td><td><code>…/stub:latest</code></td><td><code>none</code> — Jobs / smoke only</td></tr>
     </tbody>
   </table>
-  <p>Local k3s has Bedrock and AgentCore off. <code>run.create</code> with <code>claude-code</code> + <code>bedrock-sonnet</code> or <code>harness: "agentcore"</code> 409s there. Use <code>opencode</code> + a free Zen model, <code>session</code>, or <code>stub</code>. AgentCore is Job-only (<code>run.create</code> / <code>job.spawn</code>); the runner calls <code>InvokeHarness</code> or <code>InvokeAgentRuntime</code>. Optional Gateway URL is catalog MCP <code>agentcore-gateway</code>.</p>
+  <p>Local k3s has Bedrock and AgentCore off. <code>run.create</code> with <code>claude-code</code> + <code>bedrock-sonnet</code> or <code>harness: "agentcore"</code> 409s there. Use <code>opencode</code> + a free Zen model, <code>session</code>, or <code>stub</code>. AgentCore is Job-only (<code>run.create</code> / <code>job.spawn</code>): the Job is the SigV4 bridge; the agent runs in the AgentCore microVM with <code>actorId</code> = owner, a stable session id, plane MCP at <code>planeExternalUrl</code>, and optional Memory / Gateway / Browser / Code Interpreter / skills. Catalog MCP <code>agentcore-gateway</code> appears when a Gateway URL is set. Children still use <code>job.spawn</code>.</p>
   <p>Each harness lists <code>disallowedTools: Task, Agent, subagent</code>. Parallelism is <code>job.spawn</code>.</p>
   <p><strong>Skills</strong> are named catalog entries (or inline / URL) hashed into the prefix. Paths the runner looks at: <code>skills</code>, <code>.cursor/skills</code>, <code>.grok/skills</code>.</p>
   <p><strong>Assets</strong> — after <code>asset.list</code>, <code>run.create</code> / <code>session.create</code> may pass <code>assets: ["eval-set"]</code>. The plane checks <code>readers</code>, then mounts read-only. Volume kinds: <code>pvc:…</code>, <code>hostPath:…</code>, <code>configMap:…</code>, <code>secret:…</code>, <code>emptyDir</code> / <code>emptyDir:Memory</code>. Local fixture: <code>hostPath:/var/lib/metaprompt/assets/eval-set</code>.</p>
@@ -294,7 +294,7 @@ bash scripts/session-up.sh          # or: session-up.sh opencode|cursor|claude-c
 
   <h2 id="memory">Memory and VCS</h2>
   <p>When <code>memory.enabled</code>, the plane talks to Postgres + pgvector. Embedding default on k3s is <code>hash</code> (no API key). Scopes: <code>user</code>, <code>party</code>, <code>repo</code>. Jobs put/search through the plane MCP; they do not mount the database.</p>
-  <p>Version control is <strong>jj-first</strong>. <code>jj.git.fetch</code> / <code>jj.git.push</code> mint short-lived creds via <code>vcs.cred.mint</code>. Do not embed remotes or PATs in Job specs.</p>
+  <p>Version control is <strong>jj-first</strong>. <code>jj.git.fetch</code> / <code>jj.git.push</code> mint via <code>vcs.cred.mint</code>. GitHub issues and PRs use <code>gh.issue.*</code> / <code>gh.pr.*</code>. On EKS the plane mints GitHub and other app tokens from a GitHub App or the mcp ServiceAccount OIDC token (<code>app.cred.mint</code>). Long-lived PATs stay on the plane and are never minted to Jobs. Do not embed remotes or PEMs in Job specs.</p>
 
   <h2 id="auth">Auth</h2>
   <p><strong>Local k3s</strong> static users (not for EKS):</p>

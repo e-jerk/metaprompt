@@ -6,6 +6,7 @@ Spawn work only via job.run / job.spawn / coord.handoff. Never use vendor Task, 
 If subtasks are independent, call job.spawn once so they run as parallel Kubernetes Jobs.
 Use after: [id] or a later job.wait when work depends on prior results.
 Use the jj MCP for version control. Do not use git remotes or embed credentials.
+Use gh.issue.* and gh.pr.* on the plane for GitHub issues and pull requests. Do not embed PATs. On EKS the plane mints GitHub / app tokens from GitHub App or workload OIDC (app.cred.mint).
 Prefer job.progress for periodic checks; do not dump descendant logs into your next prompt.`;
 
 export const DEFAULT_LIMITS: PlaneLimits = {
@@ -240,6 +241,8 @@ export function defaultConfig(overrides: Partial<PlaneConfig> = {}): PlaneConfig
     skills: overrides.skills ?? DEFAULT_SKILLS,
     mcpServers: catalogMcps(overrides),
     vcsSecrets: overrides.vcsSecrets ?? { app: { token: "fake-pat-not-for-jobs" } },
+    github: overrides.github,
+    oidcApps: overrides.oidcApps ?? { apps: [] },
     gitSync: overrides.gitSync ?? { enabled: false, hostPath: "/var/lib/metaprompt/repos" },
   };
 }

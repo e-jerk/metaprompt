@@ -187,19 +187,27 @@ describe("vertical slice", () => {
     const run = await on.createRun(a2, { harness: "agentcore", repo: "app", prompt: "ping", storage: "tmpfs" });
     expect(run.harness).toBe("agentcore");
     expect(run.resolvedModel).toMatchObject({ provider: "agentcore" });
+    expect(run.agentcore?.actorId).toBe("alice");
+    expect(run.agentcore?.sessionId).toMatch(/^run_/);
+    expect(run.agentcore?.sessionId.length).toBeGreaterThanOrEqual(33);
     expect(on.modelList("agentcore").some((m) => m.id === "agentcore")).toBe(true);
+    await on.complete(run, "succeeded", {
+      summary: "pong",
+      usage: { inputTokens: 9, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    });
+    expect(on.getRun(run.id).usage.inputTokens).toBe(9);
   });
 
   it("11. jj mint ACL; no PAT on the run record", async () => {
     const p = plane();
     const { alice, bob } = users(p);
     const run = await p.createRun(alice, { harness: "stub", repo: "app" });
-    const minted = p.mintCred(alice, { repo: "app", op: "push", runId: run.id });
+    const minted = await p.mintCred(alice, { repo: "app", op: "push", runId: run.id });
     expect(minted.ephemeral).toBe(true);
     expect(minted.token).toMatch(/^minted-/);
     expect(JSON.stringify(run)).not.toContain("fake-pat");
-    expect(() => p.mintCred(bob, { repo: "app", op: "push", runId: run.id })).toThrow(/writer|cannot mint/);
-    const fetch = p.mintCred(alice, { repo: "app", op: "fetch", runId: run.id });
+    await expect(p.mintCred(bob, { repo: "app", op: "push", runId: run.id })).rejects.toThrow(/writer|cannot mint/);
+    const fetch = await p.mintCred(alice, { repo: "app", op: "fetch", runId: run.id });
     expect(fetch.token).toBeTruthy();
   });
 

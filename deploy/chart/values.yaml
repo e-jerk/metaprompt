@@ -31,6 +31,23 @@ auth:
       token: local-dev-token
       groups: [eng]
       admin: true
+  # Workload identity for GitHub + other apps. Distinct from user OIDC (GHE) and job IRSA (Bedrock).
+  # Private keys live in Secret metaprompt-github-app, never on Jobs.
+  apps:
+    tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    github:
+      grant: github-app
+      appId: ""
+      installationId: ""
+      tokenUrl: ""
+      audience: ""
+    extras: []
+    # extras:
+    #   - name: linear
+    #     grant: token-exchange
+    #     tokenUrl: https://sts.example/token
+    #     audience: linear
+    #     allowedGroups: [eng]
 
 serviceAccount:
   mcp: metaprompt-mcp
@@ -42,7 +59,7 @@ bedrock:
   region: us-east-1
   serviceAccount:
     annotations: {}
-  # Amazon Bedrock AgentCore (Harness / Runtime / Gateway). Job-only; not kubectl exec.
+  # Amazon Bedrock AgentCore (Harness / Runtime / Gateway / Memory). Job-only; not kubectl exec.
   agentcore:
     enabled: false
     harnessArn: ""
@@ -50,6 +67,14 @@ bedrock:
     qualifier: ""
     gatewayUrl: ""
     gatewayArn: ""
+    # URL AgentCore (in AWS) uses to call plane MCP. ClusterIP is not reachable from AWS.
+    planeExternalUrl: ""
+    memoryArn: ""
+    memoryNamespace: "/actors/{actorId}"
+    awsSkillPaths: []
+    maxIterations: 0
+    maxTokens: 0
+    timeoutSeconds: 0
     attachPlaneMcp: true
     enableBrowser: false
     enableCodeInterpreter: false

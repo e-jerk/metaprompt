@@ -71,6 +71,24 @@ spec:
               value: {{ $ac.gatewayUrl | default "" | quote }}
             - name: METAPROMPT_AGENTCORE_GATEWAY_ARN
               value: {{ $ac.gatewayArn | default "" | quote }}
+            - name: METAPROMPT_PLANE_EXTERNAL_URL
+              value: {{ $ac.planeExternalUrl | default "" | quote }}
+            - name: METAPROMPT_AGENTCORE_MEMORY_ARN
+              value: {{ $ac.memoryArn | default "" | quote }}
+            {{- $apps := .Values.auth.apps | default dict }}
+            {{- $gh := $apps.github | default dict }}
+            - name: METAPROMPT_GITHUB_APP_ID
+              value: {{ $gh.appId | default "" | quote }}
+            - name: METAPROMPT_GITHUB_APP_INSTALLATION_ID
+              value: {{ $gh.installationId | default "" | quote }}
+            - name: METAPROMPT_GITHUB_APP_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: metaprompt-github-app
+                  key: private-key
+                  optional: true
+            - name: METAPROMPT_OIDC_TOKEN_FILE
+              value: {{ $apps.tokenFile | default "/var/run/secrets/kubernetes.io/serviceaccount/token" | quote }}
             - name: METAPROMPT_STORAGE_CLASS
               value: {{ .Values.storage.storageClass | quote }}
             - name: METAPROMPT_PVC_SIZE

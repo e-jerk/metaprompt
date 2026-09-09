@@ -103,6 +103,21 @@ export function specFromRun(run: Run, config: PlaneConfig, extras?: StartExtras)
             runtimeArn: config.agentcore.runtimeArn,
             qualifier: config.agentcore.qualifier,
             gatewayArn: config.agentcore.gatewayArn,
+            planeUrl:
+              config.agentcore.planeExternalUrl ||
+              process.env.METAPROMPT_PLANE_EXTERNAL_URL ||
+              extras?.planeUrl ||
+              process.env.METAPROMPT_PLANE_URL ||
+              "http://metaprompt-mcp:3333",
+            memoryArn: config.agentcore.memoryArn,
+            memoryNamespace: config.agentcore.memoryNamespace,
+            sessionId: run.agentcore?.sessionId,
+            actorId: run.agentcore?.actorId,
+            awsSkillPaths: config.agentcore.awsSkillPaths,
+            maxIterations: config.agentcore.maxIterations,
+            maxTokens: config.agentcore.maxTokens,
+            timeoutSeconds: config.agentcore.timeoutSeconds,
+            allowedTools: config.agentcore.allowedTools,
             attachPlaneMcp: config.agentcore.attachPlaneMcp,
             enableBrowser: config.agentcore.enableBrowser,
             enableCodeInterpreter: config.agentcore.enableCodeInterpreter,
@@ -181,6 +196,14 @@ export function envFromSpec(spec: HarnessJobSpec): Record<string, { value?: stri
           METAPROMPT_AGENTCORE_RUNTIME_ARN: { value: str(spec.agentcore.runtimeArn) },
           METAPROMPT_AGENTCORE_QUALIFIER: { value: str(spec.agentcore.qualifier) },
           METAPROMPT_AGENTCORE_GATEWAY_ARN: { value: str(spec.agentcore.gatewayArn) },
+          METAPROMPT_PLANE_EXTERNAL_URL: { value: str(spec.agentcore.planeUrl) },
+          METAPROMPT_AGENTCORE_MEMORY_ARN: { value: str(spec.agentcore.memoryArn) },
+          METAPROMPT_AGENTCORE_MEMORY_NS: { value: str(spec.agentcore.memoryNamespace) },
+          METAPROMPT_AGENTCORE_AWS_SKILLS: { value: JSON.stringify(spec.agentcore.awsSkillPaths ?? []) },
+          METAPROMPT_AGENTCORE_MAX_ITER: { value: spec.agentcore.maxIterations ? String(spec.agentcore.maxIterations) : "" },
+          METAPROMPT_AGENTCORE_MAX_TOKENS: { value: spec.agentcore.maxTokens ? String(spec.agentcore.maxTokens) : "" },
+          METAPROMPT_AGENTCORE_TIMEOUT: { value: spec.agentcore.timeoutSeconds ? String(spec.agentcore.timeoutSeconds) : "" },
+          METAPROMPT_AGENTCORE_ALLOWED_TOOLS: { value: JSON.stringify(spec.agentcore.allowedTools ?? []) },
           METAPROMPT_AGENTCORE_ATTACH_PLANE: { value: spec.agentcore.attachPlaneMcp === false ? "0" : "1" },
           METAPROMPT_AGENTCORE_BROWSER: { value: spec.agentcore.enableBrowser ? "1" : "0" },
           METAPROMPT_AGENTCORE_CODE: { value: spec.agentcore.enableCodeInterpreter ? "1" : "0" },

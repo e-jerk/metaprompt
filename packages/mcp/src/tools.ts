@@ -59,6 +59,18 @@ export const TOOL_NAMES = [
   "jj.git.fetch",
   "jj.git.push",
   "vcs.cred.mint",
+  "app.list",
+  "app.cred.mint",
+  "gh.issue.list",
+  "gh.issue.get",
+  "gh.issue.create",
+  "gh.issue.comment",
+  "gh.issue.update",
+  "gh.pr.list",
+  "gh.pr.get",
+  "gh.pr.create",
+  "gh.pr.review",
+  "gh.pr.merge",
   "memory.put",
   "memory.search",
   "memory.get",
@@ -185,6 +197,25 @@ export async function callTool(plane: Plane, identity: Identity, name: string, a
       return plane.mintCred(identity, { repo: String(args.repo), op: "push", runId: String(args.runId ?? identity.runId) });
     case "vcs.cred.mint":
       return plane.mintCred(identity, args as never);
+    case "app.list":
+      return plane.appList(identity);
+    case "app.cred.mint":
+      return plane.appCredMint(identity, {
+        name: String(args.name ?? args.app),
+        repo: args.repo ? String(args.repo) : undefined,
+        scope: args.scope ? String(args.scope) : undefined,
+      });
+    case "gh.issue.list":
+    case "gh.issue.get":
+    case "gh.issue.create":
+    case "gh.issue.comment":
+    case "gh.issue.update":
+    case "gh.pr.list":
+    case "gh.pr.get":
+    case "gh.pr.create":
+    case "gh.pr.review":
+    case "gh.pr.merge":
+      return plane.github(identity, name, args);
     case "memory.put":
       return plane.memoryPut(identity, {
         scope: args.scope as "user" | "party" | "repo",

@@ -119,6 +119,8 @@ describe("HarnessJob projection", () => {
           region: "us-west-2",
           harnessArn: "arn:aws:bedrock-agentcore:us-west-2:1:harness/demo-abcdefghij",
           gatewayArn: "arn:aws:bedrock-agentcore:us-west-2:1:gateway/g-abcdefghij",
+          planeExternalUrl: "https://plane.example",
+          memoryArn: "arn:aws:bedrock-agentcore:us-west-2:1:memory/mem-abcdefghij",
           enableBrowser: true,
         },
       }),
@@ -131,6 +133,8 @@ describe("HarnessJob projection", () => {
     });
     const spec = specFromRun(run, plane.config, { runToken: "secret-run-token", planeUrl: "http://plane" });
     expect(spec.agentcore?.harnessArn).toContain("harness/demo-abcdefghij");
+    expect(spec.agentcore?.planeUrl).toBe("https://plane.example");
+    expect(spec.agentcore?.sessionId).toBe(run.agentcore?.sessionId);
     expect(JSON.stringify(spec)).not.toContain("secret-run-token");
     const job = jobManifest(spec);
     expect(job.spec.template.spec.containers[0].env).toEqual(
@@ -138,6 +142,8 @@ describe("HarnessJob projection", () => {
         { name: "METAPROMPT_AGENTCORE", value: "1" },
         { name: "AWS_REGION", value: "us-west-2" },
         { name: "METAPROMPT_AGENTCORE_BROWSER", value: "1" },
+        { name: "METAPROMPT_PLANE_EXTERNAL_URL", value: "https://plane.example" },
+        { name: "METAPROMPT_AGENTCORE_MEMORY_ARN", value: "arn:aws:bedrock-agentcore:us-west-2:1:memory/mem-abcdefghij" },
       ]),
     );
     expect(() => assertNoSecretsInSpec(spec)).not.toThrow();

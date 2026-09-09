@@ -27,6 +27,9 @@ describe("child MCP", () => {
       expect(names).toContain("job.spawn");
       expect(names).toContain("jj.status");
       expect(names).toContain("jj.git.fetch");
+      expect(names).toContain("gh.issue.create");
+      expect(names).toContain("gh.pr.merge");
+      expect(names).toContain("app.cred.mint");
       const jjOnly = await rpc(`http://127.0.0.1:${child.port}/jj`, "tools/list");
       const jjNames = ((jjOnly.body.result as { tools: { name: string }[] }).tools).map((t) => t.name);
       expect(jjNames.every((n) => n.startsWith("jj."))).toBe(true);

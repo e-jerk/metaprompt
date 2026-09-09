@@ -57,6 +57,16 @@ export type HarnessJobSpec = {
     runtimeArn?: string;
     qualifier?: string;
     gatewayArn?: string;
+    planeUrl?: string;
+    memoryArn?: string;
+    memoryNamespace?: string;
+    sessionId?: string;
+    actorId?: string;
+    awsSkillPaths?: string[];
+    maxIterations?: number;
+    maxTokens?: number;
+    timeoutSeconds?: number;
+    allowedTools?: string[];
     attachPlaneMcp?: boolean;
     enableBrowser?: boolean;
     enableCodeInterpreter?: boolean;

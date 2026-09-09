@@ -2,7 +2,11 @@ import {
   ALWAYS_ON_MCPS,
   ModelError,
   PARENT_ONLY_MCPS,
+  agentcoreActorId,
   agentcoreConfigured,
+  agentcoreSessionId,
+  isGhTool,
+  parseGithubRepoUrl,
   cacheHintFor,
   canInstructRun,
   canKillRun,
@@ -41,10 +45,26 @@ import {
   type Run,
   type SkillRef,
   type SpawnAgent,
+  type GhTool,
   type StorageKind,
 } from "@metaprompt/shared";
 import { signRunToken } from "./auth.js";
 import { PlaneError } from "./errors.js";
+import {
+  canUseApp,
+  githubAppSpec,
+  listAppSpecs,
+  mintAppToken,
+  type AppAuthDeps,
+} from "./app-auth.js";
+import {
+  assertGithubBody,
+  githubApi,
+  issueNumber,
+  requireGithubToken,
+  sanitizeGithubItem,
+  sanitizeGithubList,
+} from "./github.js";
 import { HashEmbedder, InMemoryVectorStore, assertNonSecretMemory, newMemoryId, type VectorMemoryStore } from "./memory.js";
 import { LocalRuntime, type Runtime } from "./runtime.js";
 import { MemoryStore } from "./store.js";
@@ -75,6 +95,10 @@ export class Plane {
   readonly store = new MemoryStore();
   readonly runtime: Runtime;
   readonly memories: VectorMemoryStore;
+  githubFetch: typeof fetch = fetch;
+  appAuthFetch: typeof fetch = fetch;
+  workloadOidcToken?: string;
+  appPrivateKeys: Record<string, string> = {};
 
   constructor(
     readonly config: PlaneConfig,
@@ -333,6 +357,9 @@ export class Plane {
       createdAt: this.now(),
       updatedAt: this.now(),
       activeDeadlineSeconds: input.activeDeadlineSeconds,
+      ...(harness.name === "agentcore"
+        ? { agentcore: { sessionId: agentcoreSessionId(id), actorId: agentcoreActorId(identity.user) } }
+        : {}),
     };
 
     this.store.runs.set(id, run);
@@ -707,13 +734,26 @@ export class Plane {
   async complete(
     run: Run,
     status: "succeeded" | "failed" | "cancelled",
-    extra?: { summary?: string; reason?: string },
+    extra?: {
+      summary?: string;
+      reason?: string;
+      usage?: Partial<Pick<Run["usage"], "inputTokens" | "outputTokens" | "cacheReadTokens" | "cacheWriteTokens">>;
+    },
   ): Promise<Run> {
     if (isTerminal(run.status) && run.status === status) return run;
     run.status = status;
     run.summary = extra?.summary ?? run.summary;
     run.reason = extra?.reason ?? run.reason;
-    if (run.harness === "stub") run.usage = stubUsage(run.prefixHash);
+    if (extra?.usage) {
+      run.usage = {
+        ...run.usage,
+        inputTokens: finiteTokens(extra.usage.inputTokens, run.usage.inputTokens),
+        outputTokens: finiteTokens(extra.usage.outputTokens, run.usage.outputTokens),
+        cacheReadTokens: finiteTokens(extra.usage.cacheReadTokens, run.usage.cacheReadTokens),
+        cacheWriteTokens: finiteTokens(extra.usage.cacheWriteTokens, run.usage.cacheWriteTokens),
+        prefixHash: run.prefixHash,
+      };
+    } else if (run.harness === "stub") run.usage = stubUsage(run.prefixHash);
     run.updatedAt = this.now();
     this.appendLog(run.id, `complete ${status}${run.summary ? ` — ${run.summary}` : ""}`, "system");
     // Only delete the Job on cancel. Succeeded/failed Jobs stay until ttlSecondsAfterFinished.
@@ -1279,7 +1319,178 @@ export class Plane {
     return { ok: true };
   }
 
-  mintCred(identity: Identity, args: { repo: string; op: "fetch" | "push"; runId: string }) {
+  async github(identity: Identity, tool: string, args: Record<string, unknown>): Promise<unknown> {
+    if (!isGhTool(tool)) throw new PlaneError(404, `unknown tool: ${tool}`);
+    const write = !tool.endsWith(".list") && !tool.endsWith(".get");
+    const ctx = await this.githubContext(identity, args.repo ? String(args.repo) : undefined, write);
+    const fetchImpl = this.githubFetch;
+    const call = (method: string, path: string, body?: unknown, query?: Record<string, string | undefined>) =>
+      githubApi({ token: ctx.token, ref: ctx.ref, method, path, body, query, fetchImpl });
+    switch (tool as GhTool) {
+      case "gh.issue.list":
+        return sanitizeGithubList(
+          "issue",
+          await call("GET", "/issues", undefined, {
+            state: args.state ? String(args.state) : "open",
+            labels: args.labels ? String(args.labels) : undefined,
+            per_page: "20",
+          }),
+        );
+      case "gh.issue.get":
+        return sanitizeGithubItem("issue", await call("GET", `/issues/${issueNumber(args)}`));
+      case "gh.issue.create": {
+        const title = String(args.title ?? "").trim();
+        if (!title) throw new PlaneError(400, "title required");
+        assertGithubBody(args.body ? String(args.body) : undefined);
+        return sanitizeGithubItem(
+          "issue",
+          await call("POST", "/issues", {
+            title,
+            body: args.body ? String(args.body) : undefined,
+            labels: Array.isArray(args.labels) ? args.labels.map(String) : undefined,
+          }),
+        );
+      }
+      case "gh.issue.comment": {
+        const body = String(args.body ?? "").trim();
+        if (!body) throw new PlaneError(400, "body required");
+        assertGithubBody(body);
+        const created = await call("POST", `/issues/${issueNumber(args)}/comments`, { body });
+        return sanitizeGithubItem("review", created as Record<string, unknown>);
+      }
+      case "gh.issue.update": {
+        if (args.body) assertGithubBody(String(args.body));
+        return sanitizeGithubItem(
+          "issue",
+          await call("PATCH", `/issues/${issueNumber(args)}`, {
+            ...(args.title ? { title: String(args.title) } : {}),
+            ...(args.body ? { body: String(args.body) } : {}),
+            ...(args.state ? { state: String(args.state) } : {}),
+          }),
+        );
+      }
+      case "gh.pr.list":
+        return sanitizeGithubList(
+          "pr",
+          await call("GET", "/pulls", undefined, {
+            state: args.state ? String(args.state) : "open",
+            per_page: "20",
+          }),
+        );
+      case "gh.pr.get":
+        return sanitizeGithubItem("pr", await call("GET", `/pulls/${issueNumber(args)}`));
+      case "gh.pr.create": {
+        const title = String(args.title ?? "").trim();
+        const head = String(args.head ?? "").trim();
+        const base = String(args.base ?? ctx.repo.ref ?? "main").trim();
+        if (!title || !head) throw new PlaneError(400, "title and head required");
+        assertGithubBody(args.body ? String(args.body) : undefined);
+        return sanitizeGithubItem(
+          "pr",
+          await call("POST", "/pulls", {
+            title,
+            head,
+            base,
+            body: args.body ? String(args.body) : undefined,
+          }),
+        );
+      }
+      case "gh.pr.review": {
+        const event = String(args.event ?? args.action ?? "COMMENT").toUpperCase();
+        if (!["APPROVE", "REQUEST_CHANGES", "COMMENT"].includes(event)) {
+          throw new PlaneError(400, "event must be APPROVE, REQUEST_CHANGES, or COMMENT");
+        }
+        assertGithubBody(args.body ? String(args.body) : undefined);
+        return sanitizeGithubItem(
+          "review",
+          await call("POST", `/pulls/${issueNumber(args)}/reviews`, {
+            event,
+            body: args.body ? String(args.body) : undefined,
+          }),
+        );
+      }
+      case "gh.pr.merge":
+        return sanitizeGithubItem(
+          "pr",
+          await call("PUT", `/pulls/${issueNumber(args)}/merge`, {
+            merge_method: String(args.method ?? args.mergeMethod ?? "squash"),
+          }),
+        );
+      default:
+        throw new PlaneError(404, `unknown tool: ${tool}`);
+    }
+  }
+
+  private async githubContext(identity: Identity, repoName: string | undefined, write: boolean) {
+    const name = repoName || (identity.runId ? this.getRun(identity.runId).repo : undefined);
+    if (!name) throw new PlaneError(400, "repo required");
+    const repo = this.repo(name);
+    const writer = listed(repo.writers, identity) || Boolean(identity.admin);
+    const reader = listed(repo.readers, identity) || writer;
+    if (write && !writer) throw new PlaneError(403, `not a writer of repo ${name}`);
+    if (!write && !reader) throw new PlaneError(403, `not a reader of repo ${name}`);
+    let ref;
+    try {
+      ref = parseGithubRepoUrl(repo.url, this.config.github?.apiUrl);
+    } catch (err) {
+      throw new PlaneError(400, err instanceof Error ? err.message : "invalid repo url");
+    }
+    const minted = await this.tryMintGithub(identity);
+    return { repo, ref, token: minted?.token ?? requireGithubToken(this.config.vcsSecrets[name]?.token, name) };
+  }
+
+  private appAuthDeps(name: string): AppAuthDeps {
+    return {
+      fetchImpl: this.appAuthFetch,
+      privateKey: this.appPrivateKeys[name],
+      readWorkloadToken: this.workloadOidcToken ? () => this.workloadOidcToken : undefined,
+      apiBase: this.config.github?.apiUrl,
+    };
+  }
+
+  private async tryMintGithub(identity: Identity) {
+    const spec = githubAppSpec(this.config.github, this.config.oidcApps?.apps);
+    if (!spec || !canUseApp(identity, spec)) return undefined;
+    return mintAppToken(spec, this.appAuthDeps("github"));
+  }
+
+  appList(identity: Identity): Array<{ name: string; grant: string }> {
+    return listAppSpecs(this.config.oidcApps, this.config.github)
+      .filter((spec) => canUseApp(identity, spec))
+      .map((spec) => ({ name: spec.name, grant: spec.grant }));
+  }
+
+  async appCredMint(identity: Identity, args: { name: string; repo?: string; scope?: string }) {
+    const spec = listAppSpecs(this.config.oidcApps, this.config.github).find((a) => a.name === args.name);
+    if (!spec) throw new PlaneError(404, `unknown app: ${args.name}`);
+    if (!canUseApp(identity, spec)) throw new PlaneError(403, `cannot use app ${args.name}`);
+    if (spec.name === "github" || spec.grant === "github-app") {
+      const repoName = args.repo || (identity.runId ? this.getRun(identity.runId).repo : undefined);
+      if (repoName) {
+        const repo = this.repo(repoName);
+        if (!listed(repo.readers, identity) && !listed(repo.writers, identity) && !identity.admin) {
+          throw new PlaneError(403, `not a reader of repo ${repoName}`);
+        }
+      }
+    }
+    const minted = await mintAppToken({ ...spec, scope: args.scope ?? spec.scope }, this.appAuthDeps(spec.name));
+    this.store.minted.push({
+      repo: args.repo ?? spec.name,
+      op: "app",
+      runId: identity.runId ?? "user",
+      token: `minted-app-${spec.name}`,
+      at: this.now(),
+    });
+    return {
+      token: minted.token,
+      ephemeral: true,
+      expiresAt: minted.expiresAt,
+      username: minted.username,
+      source: minted.source,
+    };
+  }
+
+  async mintCred(identity: Identity, args: { repo: string; op: "fetch" | "push"; runId: string }) {
     const repo = this.repo(args.repo);
     const run = this.getRun(args.runId);
     if (run.owner !== identity.user && !identity.admin && identity.runId !== run.id) {
@@ -1289,15 +1500,32 @@ export class Plane {
     const reader = listed(repo.readers, identity) || writer;
     if (args.op === "fetch" && !reader) throw new PlaneError(403, "jj.git.fetch needs reader");
     if (args.op === "push" && !writer) throw new PlaneError(403, "jj.git.push needs writer");
+    const minted = await this.tryMintGithub(identity);
+    if (minted) {
+      this.store.minted.push({
+        repo: args.repo,
+        op: args.op,
+        runId: args.runId,
+        token: `minted-${args.op}-${newId("cred")}`,
+        at: this.now(),
+      });
+      return {
+        token: minted.token,
+        username: minted.username ?? "x-access-token",
+        ephemeral: true,
+        expiresAt: minted.expiresAt,
+        source: minted.source,
+      };
+    }
     const secret = this.config.vcsSecrets[args.repo];
     if (!secret?.token && !secret?.sshKey) {
       const token = `minted-${args.op}-${args.runId}`;
       this.store.minted.push({ repo: args.repo, op: args.op, runId: args.runId, token, at: this.now() });
-      return { token, ephemeral: true };
+      return { token, ephemeral: true, source: "placeholder" as const };
     }
     const token = `minted-${args.op}-${newId("cred")}`;
     this.store.minted.push({ repo: args.repo, op: args.op, runId: args.runId, token, at: this.now() });
-    return { token, ephemeral: true };
+    return { token, ephemeral: true, source: "placeholder" as const };
   }
 
   setRepoSha(name: string, sha: string, generation: string): void {
@@ -1316,4 +1544,8 @@ export class Plane {
       mcpServers: [...ALWAYS_ON_MCPS, ...run.mcpServers.map((m) => m.name)],
     };
   }
+}
+
+function finiteTokens(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
 }

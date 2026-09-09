@@ -34,6 +34,8 @@ bedrock:
     qualifier: ""
     gatewayUrl: ""
     gatewayArn: ""
+    planeExternalUrl: ""
+    memoryArn: ""
     attachPlaneMcp: true
     enableBrowser: false
     enableCodeInterpreter: false

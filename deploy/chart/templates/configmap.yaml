@@ -23,11 +23,28 @@ data:
         "qualifier": {{ $ac.qualifier | default "" | quote }},
         "gatewayUrl": {{ $ac.gatewayUrl | default "" | quote }},
         "gatewayArn": {{ $ac.gatewayArn | default "" | quote }},
+        "planeExternalUrl": {{ $ac.planeExternalUrl | default "" | quote }},
+        "memoryArn": {{ $ac.memoryArn | default "" | quote }},
+        "memoryNamespace": {{ $ac.memoryNamespace | default "/actors/{actorId}" | quote }},
+        "awsSkillPaths": {{ $ac.awsSkillPaths | default list | toJson }},
+        "maxIterations": {{ $ac.maxIterations | default 0 }},
+        "maxTokens": {{ $ac.maxTokens | default 0 }},
+        "timeoutSeconds": {{ $ac.timeoutSeconds | default 0 }},
         "attachPlaneMcp": {{ hasKey $ac "attachPlaneMcp" | ternary $ac.attachPlaneMcp true }},
         "enableBrowser": {{ $ac.enableBrowser | default false }},
         "enableCodeInterpreter": {{ $ac.enableCodeInterpreter | default false }}
       },
       "oidc": {{ .Values.auth.oidc | toJson }},
+      {{- $apps := .Values.auth.apps | default dict }}
+      {{- $gh := $apps.github | default dict }}
+      "github": {
+        "appId": {{ $gh.appId | default "" | quote }},
+        "installationId": {{ $gh.installationId | default "" | quote }}
+      },
+      "oidcApps": {
+        "tokenFile": {{ $apps.tokenFile | default "/var/run/secrets/kubernetes.io/serviceaccount/token" | quote }},
+        "apps": {{ $apps.extras | default list | toJson }}
+      },
       "gitSync": {
         "enabled": {{ .Values.gitSync.enabled }},
         "hostPath": {{ .Values.gitSync.hostPath | quote }}

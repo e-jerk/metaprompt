@@ -31,6 +31,18 @@ export const CHILD_PROXY_TOOLS = [
   "jj.git.fetch",
   "jj.git.push",
   "vcs.cred.mint",
+  "app.list",
+  "app.cred.mint",
+  "gh.issue.list",
+  "gh.issue.get",
+  "gh.issue.create",
+  "gh.issue.comment",
+  "gh.issue.update",
+  "gh.pr.list",
+  "gh.pr.get",
+  "gh.pr.create",
+  "gh.pr.review",
+  "gh.pr.merge",
 ] as const;
 
 export const JJ_LOCAL_TOOLS = [

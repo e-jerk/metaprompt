@@ -7,7 +7,7 @@ export const ALWAYS_ON_MCPS = ["plane", "party", "jj"] as const;
 export const PARENT_ONLY_MCPS = ["clanker"] as const;
 
 export const ALWAYS_ON_SCHEMAS: Record<(typeof ALWAYS_ON_MCPS)[number], string> = {
-  plane: "control-plane MCP: harness, run, party, cron, repo, model, skill, mcp, jj, memory",
+  plane: "control-plane MCP: harness, run, party, cron, repo, model, skill, mcp, jj, memory, gh, app",
   party: "party/child MCP: instruction, job.run/spawn/wait/kill/logs/progress, self, coord",
   jj: "jj MCP: status/diff/log/new/describe/squash/rebase/bookmark, git.fetch, git.push",
 };

@@ -106,6 +106,10 @@ export type Run = {
   instruction?: string;
   resumeSuffix?: string;
   jobName?: string;
+  agentcore?: {
+    sessionId: string;
+    actorId: string;
+  };
 };
 
 export type PartyMember = {
@@ -251,7 +255,7 @@ export type BedrockConfig = {
   region: string;
 };
 
-/** Amazon Bedrock AgentCore (Harness, Runtime, Gateway). Sibling of InvokeModel Bedrock. */
+/** Amazon Bedrock AgentCore (Harness, Runtime, Gateway, Memory). Sibling of InvokeModel Bedrock. */
 export type AgentcoreConfig = {
   enabled: boolean;
   region: string;
@@ -261,6 +265,16 @@ export type AgentcoreConfig = {
   gatewayUrl?: string;
   gatewayArn?: string;
   gatewayName?: string;
+  /** URL AgentCore (in AWS) can reach. ClusterIP is not enough. */
+  planeExternalUrl?: string;
+  memoryArn?: string;
+  /** Namespace prefix template. `{actorId}` is substituted. Default `/actors/{actorId}`. */
+  memoryNamespace?: string;
+  awsSkillPaths?: string[];
+  maxIterations?: number;
+  maxTokens?: number;
+  timeoutSeconds?: number;
+  allowedTools?: string[];
   attachPlaneMcp?: boolean;
   enableBrowser?: boolean;
   enableCodeInterpreter?: boolean;
@@ -301,6 +315,37 @@ export type PlaneConfig = {
   skills: CatalogSkill[];
   mcpServers: CatalogMcp[];
   vcsSecrets: Record<string, { token?: string; sshKey?: string }>;
+  /** Optional GitHub API override (GitHub Enterprise). Default is derived from the repo URL. */
+  github?: GithubConfig;
+  /** Workload OIDC / GitHub App clients the plane mints tokens for. Keys stay in env/Secrets, never on Jobs. */
+  oidcApps?: OidcAppsConfig;
+};
+
+export type GithubConfig = {
+  apiUrl?: string;
+  appId?: string;
+  installationId?: string;
+};
+
+export type AppAuthGrant = "github-app" | "token-exchange" | "jwt-bearer";
+
+export type AppAuthSpec = {
+  name: string;
+  grant: AppAuthGrant;
+  appId?: string;
+  installationId?: string;
+  tokenUrl?: string;
+  audience?: string;
+  scope?: string;
+  clientId?: string;
+  allowedUsers?: string[];
+  allowedGroups?: string[];
+};
+
+export type OidcAppsConfig = {
+  /** Projected SA token or IRSA web identity. Default: in-cluster SA token. */
+  tokenFile?: string;
+  apps: AppAuthSpec[];
 };
 
 export type ProgressRow = {

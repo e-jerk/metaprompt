@@ -50,6 +50,9 @@ describe("HTTP MCP", () => {
       const tools = (listed.body.result as { tools: { name: string }[] }).tools.map((t) => t.name);
       expect(tools).toContain("run.create");
       expect(tools).toContain("memory.put");
+      expect(tools).toContain("gh.issue.create");
+      expect(tools).toContain("gh.pr.merge");
+      expect(tools).toContain("app.cred.mint");
       const created = await call(url, "alice-token", "run.create", { harness: "stub", repo: "app", prompt: "hi" });
       expect(created.harness).toBe("stub");
       expect(created.owner).toBe(identityFromStatic(plane.config.staticUsers[1]!).user);

@@ -151,10 +151,12 @@ Independent work: no `after` (parallel Jobs). Dependent work: `after: [id]`. Sam
 | `claude-code` | `bedrock-sonnet` | Requires Bedrock when that model is requested. |
 | `codex` | `gpt-5` | Needs OpenAI credentials. |
 | `cursor` | `auto` | Also `composer-2.5`. |
-| `agentcore` | `agentcore` | Amazon Bedrock AgentCore Harness or Runtime. Job-only. Needs `agentcore.enabled` plus `harnessArn` or `runtimeArn`. Optional Gateway MCP `agentcore-gateway`. |
+| `agentcore` | `agentcore` | Amazon Bedrock AgentCore Harness or Runtime. Job-only. Needs `agentcore.enabled` plus `harnessArn` or `runtimeArn`. The Job is the SigV4 bridge; the agent loop runs in the AgentCore microVM. Attach plane MCP at `planeExternalUrl` (AWS cannot reach ClusterIP). Optional Memory (`memoryArn`, `actorId` = owner), Gateway MCP `agentcore-gateway`, Browser, Code Interpreter, AWS/Git/S3 skills. |
 | `stub` | `none` | Jobs/smoke only. Rejected for sessions. |
 
-Local k3s ships `bedrock.enabled: false` and `agentcore.enabled: false`. Do not `run.create` with `claude-code` + `bedrock-sonnet` or `harness: "agentcore"` there (409). Use `opencode` + a free Zen model, or `session` / `stub`. `session.create` rejects `agentcore` — AgentCore sessions live in AWS, not `kubectl exec`.
+Local k3s ships `bedrock.enabled: false` and `agentcore.enabled: false`. Do not `run.create` with `claude-code` + `bedrock-sonnet` or `harness: "agentcore"` there (409). Use `opencode` + a free Zen model, or `session` / `stub`. `session.create` rejects `agentcore` — AgentCore sessions live in AWS (`runtimeSessionId` = padded run id, `actorId` = owner), not `kubectl exec`.
+
+On EKS, set `bedrock.agentcore.planeExternalUrl` to an Ingress/NLB (or put the harness in the cluster VPC) so `job.spawn` / `coord.*` / `memory.*` / `gh.issue.*` / `gh.pr.*` from AgentCore can reach the plane. The Job still uses the in-cluster URL to POST `/internal/runs/:id/complete` and usage. Children remain Kubernetes Jobs. AgentCore Memory (`CreateEvent` / `RetrieveMemoryRecords`) is optional and dual-writes the summary to plane `memory.put` `{ scope: "party" }`. Inline skill content goes in the system prompt; `s3://` and Git skill URLs become InvokeHarness skills. Workspace for the agent is the AgentCore filesystem (optional S3 Files / EFS on the AWS harness), not the Job `/workspace`.
 
 ### Catalog tools (do not invent names)
 
@@ -172,11 +174,15 @@ Local k3s ships `bedrock.enabled: false` and `agentcore.enabled: false`. Do not 
 
 **jj / VCS:** `jj.status` `jj.diff` `jj.log` `jj.new` `jj.describe` `jj.squash` `jj.rebase` `jj.bookmark` `jj.git.fetch` `jj.git.push` `vcs.cred.mint`
 
+**GitHub (plane only):** `gh.issue.list` `gh.issue.get` `gh.issue.create` `gh.issue.comment` `gh.issue.update` `gh.pr.list` `gh.pr.get` `gh.pr.create` `gh.pr.review` `gh.pr.merge`
+
+**App tokens (plane only):** `app.list` `app.cred.mint`
+
 **Memory (plane only):** `memory.put` `memory.search` `memory.get` `memory.delete`
 
 **Sessions:** `session.create` `session.list` `session.get` `session.attach` `session.delete`
 
-Use `jj` for version control. Do not embed git remotes or credentials in Jobs; mint via `vcs.cred.mint` / `jj.git.fetch` / `jj.git.push`. Prefer `job.progress` over dumping descendant logs into the next prompt.
+Use `jj` for version control. Do not embed git remotes or credentials in Jobs; mint via `vcs.cred.mint` / `jj.git.fetch` / `jj.git.push`. Use `gh.issue.*` / `gh.pr.*` for GitHub issues and pull requests. On EKS the plane prefers a GitHub App installation token or an RFC 8693 / jwt-bearer exchange of the **mcp ServiceAccount** OIDC token (cluster issuer or IRSA web identity). Long-lived PATs stay on the plane only as fallback and are never minted to Jobs. Other apps (Linear, custom STS) use `app.cred.mint`. AgentCore catalog MCPs get those minted bearers at invoke time. Prefer `job.progress` over dumping descendant logs into the next prompt.
 
 ### Assets and git-sync
 

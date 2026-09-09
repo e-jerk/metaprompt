@@ -81,6 +81,7 @@ export function createApp(plane: Plane): Express {
       const updated = await plane.complete(run, req.body.status ?? "succeeded", {
         summary: req.body.summary,
         reason: req.body.reason,
+        usage: req.body.usage,
       });
       res.json(updated);
     } catch (err) {
@@ -91,7 +92,7 @@ export function createApp(plane: Plane): Express {
   app.post("/internal/vcs/cred/mint", async (req, res) => {
     try {
       const identity = await authenticate(plane.config, req.header("authorization"));
-      res.json(plane.mintCred(identity, req.body));
+      res.json(await plane.mintCred(identity, req.body));
     } catch (err) {
       res.status(err instanceof PlaneError ? err.status : 500).json({ error: (err as Error).message });
     }
@@ -136,10 +137,25 @@ export function loadConfig(): PlaneConfig {
       gatewayUrl: process.env.METAPROMPT_AGENTCORE_GATEWAY_URL ?? merged.agentcore?.gatewayUrl,
       gatewayArn: process.env.METAPROMPT_AGENTCORE_GATEWAY_ARN ?? merged.agentcore?.gatewayArn,
       gatewayName: merged.agentcore?.gatewayName,
+      planeExternalUrl:
+        process.env.METAPROMPT_PLANE_EXTERNAL_URL ?? merged.agentcore?.planeExternalUrl,
+      memoryArn: process.env.METAPROMPT_AGENTCORE_MEMORY_ARN ?? merged.agentcore?.memoryArn,
+      memoryNamespace: merged.agentcore?.memoryNamespace,
+      awsSkillPaths: merged.agentcore?.awsSkillPaths,
+      maxIterations: merged.agentcore?.maxIterations,
+      maxTokens: merged.agentcore?.maxTokens,
+      timeoutSeconds: merged.agentcore?.timeoutSeconds,
+      allowedTools: merged.agentcore?.allowedTools,
       attachPlaneMcp: merged.agentcore?.attachPlaneMcp,
       enableBrowser: merged.agentcore?.enableBrowser,
       enableCodeInterpreter: merged.agentcore?.enableCodeInterpreter,
     },
+    github: {
+      apiUrl: process.env.METAPROMPT_GITHUB_API_URL ?? merged.github?.apiUrl,
+      appId: process.env.METAPROMPT_GITHUB_APP_ID ?? merged.github?.appId,
+      installationId: process.env.METAPROMPT_GITHUB_APP_INSTALLATION_ID ?? merged.github?.installationId,
+    },
+    oidcApps: merged.oidcApps,
     gitSync: {
       enabled: process.env.METAPROMPT_GITSYNC === "1" || Boolean(merged.gitSync?.enabled),
       hostPath:

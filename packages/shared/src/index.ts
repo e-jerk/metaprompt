@@ -3,6 +3,7 @@ export * from "./agentcore.js";
 export * from "./auth.js";
 export * from "./catalog.js";
 export * from "./crd.js";
+export * from "./github.js";
 export * from "./ids.js";
 export * from "./models.js";
 export * from "./prefix.js";

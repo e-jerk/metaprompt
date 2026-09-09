@@ -17,7 +17,8 @@ We do not create GitHub Enterprise or Bedrock approvals here.
 - `helm`
 - GHCR pull access for `ghcr.io/e-jerk/metaprompt/*`
 - GitHub Enterprise OIDC issuer (Cloud or Server)
-- Optional: IRSA role for Bedrock InvokeModel (`bedrock:InvokeModel`, `InvokeModelWithResponseStream`, `ListInferenceProfiles`) and/or AgentCore (`bedrock-agentcore:InvokeHarness`, `bedrock-agentcore:InvokeAgentRuntime`) on the **job** service account
+- Optional: IRSA role for Bedrock InvokeModel (`bedrock:InvokeModel`, `InvokeModelWithResponseStream`, `ListInferenceProfiles`) and/or AgentCore (`bedrock-agentcore:InvokeHarness`, `bedrock-agentcore:InvokeAgentRuntime`, and if Memory is set `bedrock-agentcore:CreateEvent`, `bedrock-agentcore:RetrieveMemoryRecords`) on the **job** service account
+- Optional: a plane URL AgentCore can reach (`bedrock.agentcore.planeExternalUrl` — Ingress/NLB or the same VPC). ClusterIP `http://metaprompt-mcp:3333` is only for in-cluster Jobs.
 
 ## Values
 
@@ -36,7 +37,33 @@ auth:
 Humans: a GitHub App or OAuth App that issues OIDC-compatible tokens against that enterprise.
 CI: GitHub Actions `id-token: write`. Same verifier; ACL still applies.
 
-This is **not** EKS IRSA and **not** Bedrock IRSA. All three can coexist.
+This is **user → plane** OIDC. It is not EKS IRSA. Three identities coexist:
+
+1. **Users / CI → plane** — GitHub Enterprise OIDC JWT (`actor` / `sub`)
+2. **Jobs → AWS** — IRSA on the **job** service account (Bedrock / AgentCore)
+3. **Plane → GitHub and other apps** — GitHub App installation tokens, or RFC 8693 / jwt-bearer exchange of the **mcp** ServiceAccount token (cluster OIDC issuer, or IRSA web identity). Private key: Secret `metaprompt-github-app`. Never mount it on Jobs.
+
+```yaml
+auth:
+  apps:
+    tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    github:
+      grant: github-app
+      appId: "123456"
+      installationId: "789012"
+    extras:
+      - name: linear
+        grant: token-exchange
+        tokenUrl: https://sts.example/token
+        audience: linear
+        allowedGroups: [eng]
+```
+
+```bash
+kubectl -n metaprompt create secret generic metaprompt-github-app --from-file=private-key=./github-app.pem
+```
+
+For `grant: token-exchange` on GitHub, point `tokenUrl` at a broker that trusts the EKS OIDC issuer (octo-sts / github-sts) and omit the App PEM from the cluster if the broker holds it. `gh.*` and `vcs.cred.mint` then use the minted installation token (`x-access-token`). `app.cred.mint` mints other apps. Long-lived PATs are plane-only fallback and are never returned to Jobs.
 
 Optional Bedrock models (Claude Code / OpenCode) and AgentCore (Job harness `agentcore`):
 
@@ -51,14 +78,17 @@ bedrock:
     enabled: true
     harnessArn: arn:aws:bedrock-agentcore:us-east-1:ACCOUNT:harness/NAME-ID
     # or runtimeArn: arn:aws:bedrock-agentcore:us-east-1:ACCOUNT:runtime/RUNTIME_ID
+    planeExternalUrl: https://metaprompt.example.com
+    memoryArn: arn:aws:bedrock-agentcore:us-east-1:ACCOUNT:memory/NAME-ID
     gatewayUrl: https://GATEWAY_ID.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
     gatewayArn: arn:aws:bedrock-agentcore:us-east-1:ACCOUNT:gateway/NAME-ID
+    awsSkillPaths: ["core-skills/*"]
     attachPlaneMcp: true
     enableBrowser: false
     enableCodeInterpreter: false
 ```
 
-The Job service account needs those AgentCore actions. The plane does not invoke AgentCore; the runner Job does (SigV4 / IRSA). `session.create` with `agentcore` is rejected — use `run.create` / `job.spawn`. Gateway URL, when set, is catalog MCP `agentcore-gateway` for any harness. Children still spawn with `job.spawn`.
+The Job service account needs those AgentCore actions. The plane does not invoke AgentCore; the runner Job does (SigV4 / IRSA). `session.create` with `agentcore` is rejected — use `run.create` / `job.spawn`. Set `planeExternalUrl` so the AWS microVM can call plane MCP (`job.spawn`, `coord.*`, `memory.*`). Same `runtimeSessionId` across attempts; `actorId` is the Metaprompt owner. Gateway URL, when set, is catalog MCP `agentcore-gateway` for any harness. Children still spawn with `job.spawn`. AgentCore filesystem (optional S3 Files / EFS on the AWS harness) is not the Job `/workspace`.
 
 ## Commands
 
