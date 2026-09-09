@@ -1,0 +1,16 @@
+node_modules
+dist
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
+coverage
+.pnpm-store
+tmp
+.kube
+*.log
+.idea
+.vscode
+!site/CNAME
+*.bun-build

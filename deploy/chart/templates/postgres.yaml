@@ -1,0 +1,97 @@
+{{- if .Values.memory.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: metaprompt-memory
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "metaprompt.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  password: {{ .Values.memory.postgres.password | quote }}
+  database-url: "postgres://{{ .Values.memory.postgres.user }}:{{ .Values.memory.postgres.password }}@metaprompt-postgres:5432/{{ .Values.memory.postgres.database }}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metaprompt-postgres
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: metaprompt-postgres
+    {{- include "metaprompt.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: metaprompt-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: metaprompt-postgres
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: metaprompt-postgres
+    {{- include "metaprompt.labels" . | nindent 4 }}
+spec:
+  serviceName: metaprompt-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metaprompt-postgres
+  template:
+    metadata:
+      labels:
+        app: metaprompt-postgres
+        {{- include "metaprompt.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.memory.postgres.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.memory.postgres.user | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.memory.postgres.database | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: metaprompt-memory
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.memory.postgres.user | quote }}]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.memory.postgres.user | quote }}]
+            initialDelaySeconds: 15
+            periodSeconds: 20
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "metaprompt.labels" . | nindent 10 }}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.memory.postgres.storageClass }}
+        storageClassName: {{ .Values.memory.postgres.storageClass | quote }}
+        {{- else if .Values.storage.storageClass }}
+        storageClassName: {{ .Values.storage.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.memory.postgres.storageSize | default "2Gi" | quote }}
+{{- end }}

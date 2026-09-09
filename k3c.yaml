@@ -1,0 +1,10 @@
+# Project defaults for k3s on Apple container (k3c).
+# Cluster name still comes from `k3c cluster create <name>` / METAPROMPT_CLUSTER.
+cluster:
+  cpus: 4
+  memory: 8G
+
+# Host Apple container 1.2.x has no gvnet plugin. k3c needs 1.3.0+ anyway
+# (writable /proc/sys). Use CONNECT-proxy egress until gvnet is on PATH.
+egress:
+  transparent: false

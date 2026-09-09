@@ -1,0 +1,16 @@
+{
+  "name": "metaprompt",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "bun run --filter @metaprompt/shared --filter @metaprompt/mcp --filter @metaprompt/runner build",
+    "test": "bun test packages/shared packages/mcp packages/runner",
+    "typecheck": "bun run --filter @metaprompt/shared --filter @metaprompt/mcp --filter @metaprompt/runner typecheck",
+    "mcp": "bun run --filter @metaprompt/mcp start",
+    "sync-site": "bash scripts/sync-site.sh"
+  },
+  "engines": {
+    "bun": ">=1.2"
+  }
+}

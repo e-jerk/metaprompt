@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Agent index (URLs, not a sitemap)
+# https://metaprom.pt/llms.txt

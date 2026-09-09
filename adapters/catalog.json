@@ -1,0 +1,5 @@
+{
+  "disallowedTools": ["Task", "Agent", "subagent"],
+  "alwaysOnMcps": ["plane", "party", "jj"],
+  "harnesses": ["stub", "opencode", "claude-code", "codex", "cursor"]
+}

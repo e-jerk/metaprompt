@@ -1,0 +1,36 @@
+# GKE overlay. Chart templates stay provider-generic.
+auth:
+  oidc:
+    provider: github-enterprise
+    issuer: https://ghe.example.com/_services/token
+    audience: metaprompt
+    jwksUri: ""
+    enterprise: ""
+    allowedOrgs: [e-jerk]
+    adminOrgs: [e-jerk]
+    map:
+      user: actor
+      groups:
+        - repository
+        - repository_owner
+        - job_workflow_ref
+  staticUsers: []
+
+storage:
+  mode: hostpath
+  # GCE persistent disk SSD (pd-ssd). Override if the cluster uses a custom class.
+  storageClass: premium-rwo
+  size: 10Gi
+
+bedrock:
+  enabled: false
+  region: us-east-1
+  serviceAccount:
+    annotations: {}
+
+image:
+  pullPolicy: Always
+
+serviceAccount:
+  annotations: {}
+  # iam.gke.io/gcp-service-account: metaprompt-mcp@PROJECT.iam.gserviceaccount.com

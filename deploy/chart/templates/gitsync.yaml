@@ -1,0 +1,38 @@
+{{- if .Values.gitSync.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: metaprompt-git-sync
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "metaprompt.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app: metaprompt-git-sync
+  template:
+    metadata:
+      labels:
+        app: metaprompt-git-sync
+    spec:
+      containers:
+        {{- range .Values.repos }}
+        - name: sync-{{ .name }}
+          image: {{ $.Values.gitSync.image }}
+          args:
+            - --repo={{ .url }}
+            - --ref={{ .ref }}
+            - --root=/repos/{{ .name }}
+            - --link=current
+            - --period={{ .period | default "60s" }}
+            - --stale-worktree-timeout={{ $.Values.gitSync.staleWorktreeTimeout }}
+          volumeMounts:
+            - name: repos
+              mountPath: /repos
+        {{- end }}
+      volumes:
+        - name: repos
+          hostPath:
+            path: {{ .Values.gitSync.hostPath }}
+            type: DirectoryOrCreate
+{{- end }}

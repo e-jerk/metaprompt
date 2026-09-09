@@ -1,0 +1,25 @@
+{
+  "name": "@metaprompt/runner",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "bin": {
+    "metaprompt-runner": "./src/main.ts",
+    "metaprompt-stub": "./src/stub.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test src",
+    "start": "bun src/main.ts"
+  },
+  "dependencies": {
+    "@metaprompt/shared": "workspace:*",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}

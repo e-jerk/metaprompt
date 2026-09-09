@@ -1,0 +1,37 @@
+auth:
+  oidc:
+    provider: github-enterprise
+    # Cloud: https://token.actions.githubusercontent.com
+    # Enterprise Server:
+    issuer: https://ghe.example.com/_services/token
+    audience: metaprompt
+    jwksUri: ""
+    enterprise: ""
+    allowedOrgs: [e-jerk]
+    adminOrgs: [e-jerk]
+    map:
+      user: actor
+      groups:
+        - repository
+        - repository_owner
+        - job_workflow_ref
+  staticUsers: []
+
+storage:
+  mode: hostpath
+  storageClass: gp3
+  size: 10Gi
+
+bedrock:
+  enabled: false
+  region: us-east-1
+  serviceAccount:
+    annotations: {}
+    # eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/metaprompt-bedrock
+
+image:
+  pullPolicy: Always
+
+serviceAccount:
+  annotations: {}
+  # eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/metaprompt-mcp

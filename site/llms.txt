@@ -1,0 +1,22 @@
+# Metaprompt
+> Kubernetes control plane for swappable CLI coding harnesses. Fetch markdown and follow it.
+
+The parent is whoever called run.create. Every child is a Kubernetes Job. Runtime is Bun. Clanker Cloud is optional.
+
+## Start
+
+- [Implement Metaprompt](https://metaprom.pt/implement.md): invariants, MCP tools, install + use. Agents start here.
+- [AGENTS.md](https://metaprom.pt/AGENTS.md): stub that points at implement.md
+- [Setup router](https://metaprom.pt/setup.md): pick an install playbook
+
+## Install playbooks
+
+- [Local k3s / k3d](https://metaprom.pt/setup/k3s.md)
+- [EKS](https://metaprom.pt/setup/eks.md)
+- [GKE](https://metaprom.pt/setup/gke.md)
+- [AKS (stub)](https://metaprom.pt/setup/aks.md)
+- [Build images](https://metaprom.pt/setup/build.md)
+- [Optional Clanker cluster](https://metaprom.pt/setup/clanker.md)
+- [Optional Clanker extras](https://metaprom.pt/setup/clanker-workspace.md)
+
+Project Pages fallback: prefix every path with `https://e-jerk.github.io/metaprompt/` instead of `https://metaprom.pt/`.

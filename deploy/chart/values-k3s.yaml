@@ -1,0 +1,44 @@
+auth:
+  staticUsers:
+    - user: local-dev
+      token: local-dev-token
+      groups: [eng]
+      admin: true
+    - user: alice
+      token: alice-token
+      groups: [eng]
+    - user: bob
+      token: bob-token
+      groups: [eng]
+
+storage:
+  mode: hostpath
+  storageClass: local-path
+  size: 2Gi
+
+bedrock:
+  enabled: false
+  region: us-east-1
+
+image:
+  pullPolicy: IfNotPresent
+
+# Local fixture. Jobs that pass assets: ["eval-set"] mount this hostPath read-only.
+assets:
+  - name: eval-set
+    volume: hostPath:/var/lib/metaprompt/assets/eval-set
+    mountPath: /assets/eval-set
+    readers: [group:eng, public]
+
+# e-jerk/metaprompt is not required for local MCP/Job smoke. Enable to mount /repos as Job lowerdir.
+gitSync:
+  enabled: false
+
+memory:
+  enabled: true
+  embeddingProvider: hash
+  embeddingDim: 64
+  postgres:
+    password: local-dev-memory
+    storageClass: local-path
+    storageSize: 2Gi

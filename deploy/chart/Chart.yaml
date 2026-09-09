@@ -1,0 +1,6 @@
+apiVersion: v2
+name: metaprompt
+description: Metaprompt control plane — portable across k3s, EKS, and later AKS/GKE
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Metaprompt</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; line-height: 1.55; color: #111; }
+    a { color: #0b57d0; }
+    code { font-size: 0.95em; }
+    h1 { font-size: 1.8rem; }
+  </style>
+</head>
+<body>
+  <h1>Metaprompt</h1>
+  <p>A Kubernetes control plane for swappable CLI coding harnesses (OpenCode, Claude Code, Codex, Cursor, session, stub). The parent is whoever called <code>run.create</code>. Every child is a Job, not an in-container subagent.</p>
+  <ul>
+    <li>Control surface is MCP, not kubectl-first.</li>
+    <li>Copy-on-write workspaces over a shared git-sync mirror. Version control is jj-first.</li>
+    <li>Nested parties, summary rollup, ancestor log tail, parallel <code>job.spawn</code>.</li>
+    <li>Local: Apple <code>container k8s</code> (or k3d). Existing EKS/GKE. Clanker Cloud is optional.</li>
+  </ul>
+  <p><strong>Agents:</strong> fetch and follow <a href="implement.md">implement.md</a> (do not invent steps). Index: <a href="llms.txt">llms.txt</a>. Install router: <a href="setup.md">setup.md</a>.</p>
+  <p>Images: <code>ghcr.io/e-jerk/metaprompt/*</code>. Source: <a href="https://github.com/e-jerk/metaprompt">e-jerk/metaprompt</a>.</p>
+</body>
+</html>

@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: metaprompt-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "metaprompt.labels" . | nindent 4 }}
+data:
+  config.json: |
+    {
+      "namespace": {{ .Values.namespace | quote }},
+      "limits": {{ .Values.limits | toJson }},
+      "bedrock": {
+        "enabled": {{ .Values.bedrock.enabled }},
+        "region": {{ .Values.bedrock.region | quote }}
+      },
+      "oidc": {{ .Values.auth.oidc | toJson }},
+      "gitSync": {
+        "enabled": {{ .Values.gitSync.enabled }},
+        "hostPath": {{ .Values.gitSync.hostPath | quote }}
+      }{{- if .Values.assets }},
+      "assets": {{ .Values.assets | toJson }}{{- end }}
+    }

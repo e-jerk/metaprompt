@@ -1,0 +1,100 @@
+nameOverride: metaprompt
+namespace: metaprompt
+
+image:
+  registry: ghcr.io/e-jerk/metaprompt
+  tag: latest
+  pullPolicy: IfNotPresent
+
+mcp:
+  replicaCount: 1
+  port: 3333
+  childPort: 3334
+
+auth:
+  oidc:
+    provider: ""
+    issuer: ""
+    audience: metaprompt
+    jwksUri: ""
+    enterprise: ""
+    allowedOrgs: []
+    adminOrgs: []
+    map:
+      user: actor
+      groups:
+        - repository
+        - repository_owner
+        - job_workflow_ref
+  staticUsers:
+    - user: local-dev
+      token: local-dev-token
+      groups: [eng]
+      admin: true
+
+serviceAccount:
+  mcp: metaprompt-mcp
+  job: metaprompt-job
+  annotations: {}
+
+bedrock:
+  enabled: false
+  region: us-east-1
+  serviceAccount:
+    annotations: {}
+
+storage:
+  mode: hostpath
+  storageClass: ""
+  size: 5Gi
+
+limits:
+  maxDepth: 4
+  maxRunningPerUser: 16
+  maxParallelPerParent: 8
+  maxAttempts: 8
+  maxWaitFor: 16
+  suspendWaitSeconds: 60
+  suspendTtlSeconds: 86400
+  maxSkillBytes: 32768
+  maxMemoryBytes: 32768
+  maxSummaryBytes: 2048
+  maxRollupBytes: 8192
+  defaultTailLines: 50
+  maxTailLines: 500
+  progressHeartbeatSeconds: 15
+  progressHeartbeatLines: 40
+
+repos:
+  - name: app
+    url: https://github.com/e-jerk/metaprompt.git
+    ref: main
+    period: 60s
+    readers: [public]
+    writers: [group:eng-leads]
+
+# Catalog-only. Omit from the ConfigMap when empty so defaultConfig keeps eval-set.
+# Do not put `repos` here without currentSha — live run.create would 409.
+assets: []
+
+gitSync:
+  enabled: true
+  image: registry.k8s.io/git-sync/git-sync:v4.4.0
+  hostPath: /var/lib/metaprompt/repos
+  staleWorktreeTimeout: 24h
+
+networkPolicy:
+  enabled: false
+
+# Optional pgvector memories. Jobs never receive DATABASE_URL; they call the plane.
+memory:
+  enabled: false
+  embeddingProvider: hash
+  embeddingDim: 64
+  postgres:
+    image: pgvector/pgvector:pg16
+    user: metaprompt
+    database: metaprompt
+    password: change-me
+    storageSize: 2Gi
+    storageClass: ""

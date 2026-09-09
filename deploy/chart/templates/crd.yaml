@@ -1,0 +1,122 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: harnessjobs.metaprompt.io
+  labels:
+    {{- include "metaprompt.labels" . | nindent 4 }}
+spec:
+  group: metaprompt.io
+  names:
+    kind: HarnessJob
+    listKind: HarnessJobList
+    plural: harnessjobs
+    singular: harnessjob
+    shortNames: [hjob, hj]
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Mode
+          type: string
+          jsonPath: .spec.mode
+        - name: Harness
+          type: string
+          jsonPath: .spec.harness
+        - name: Owner
+          type: string
+          jsonPath: .spec.owner
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [runId, owner, harness, image, partyId, rootRunId, storage, mode, planeUrl, tokenSecretRef]
+              properties:
+                runId: { type: string }
+                owner: { type: string }
+                harness: { type: string }
+                image: { type: string }
+                prompt: { type: string }
+                repo: { type: string }
+                sha: { type: string }
+                generation: { type: string }
+                model: { type: string }
+                resolvedModel:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                partyId: { type: string }
+                parentRunId: { type: string }
+                rootRunId: { type: string }
+                createdByRunId: { type: string }
+                depth: { type: integer }
+                attempt: { type: integer }
+                storage: { type: string, enum: [pvc, tmpfs] }
+                mode: { type: string, enum: [job, session] }
+                skills:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                mcpServers:
+                  type: array
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                assets:
+                  type: array
+                  items: { type: string }
+                secretRefs:
+                  type: array
+                  items: { type: string }
+                spawnGroupId: { type: string }
+                spawnKey: { type: string }
+                cron: { type: string }
+                prefixHash: { type: string }
+                cacheHint: { type: string }
+                planeUrl: { type: string }
+                serviceAccountName: { type: string }
+                pullPolicy: { type: string }
+                storageClass: { type: string }
+                pvcSize: { type: string }
+                activeDeadlineSeconds: { type: integer }
+                tokenSecretRef:
+                  type: object
+                  required: [name, key]
+                  properties:
+                    name: { type: string }
+                    key: { type: string }
+                assetMounts:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, volume, mountPath]
+                    properties:
+                      name: { type: string }
+                      volume: { type: string }
+                      mountPath: { type: string }
+                      readOnly: { type: boolean }
+                gitSync:
+                  type: object
+                  properties:
+                    enabled: { type: boolean }
+                    hostPath: { type: string }
+                lowerdir: { type: string }
+                childMcpPort: { type: integer }
+            status:
+              type: object
+              properties:
+                phase: { type: string }
+                jobName: { type: string }
+                pvcName: { type: string }
+                message: { type: string }

@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metaprompt-mcp
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "metaprompt.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.mcp.replicaCount }}
+  selector:
+    matchLabels:
+      app: metaprompt-mcp
+  template:
+    metadata:
+      labels:
+        app: metaprompt-mcp
+        {{- include "metaprompt.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.mcp }}
+      {{- if .Values.memory.enabled }}
+      initContainers:
+        - name: wait-postgres
+          image: {{ .Values.memory.postgres.image | quote }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - until pg_isready -h metaprompt-postgres -U {{ .Values.memory.postgres.user }} -d {{ .Values.memory.postgres.database }}; do sleep 2; done
+      {{- end }}
+      containers:
+        - name: mcp
+          image: "{{ .Values.image.registry }}/mcp:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.mcp.port }}
+              name: http
+          env:
+            - name: PORT
+              value: {{ .Values.mcp.port | quote }}
+            - name: METAPROMPT_IN_CLUSTER
+              value: "1"
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            - name: METAPROMPT_NAMESPACE
+              value: {{ .Values.namespace | quote }}
+            - name: METAPROMPT_PLANE_URL
+              value: "http://metaprompt-mcp:{{ .Values.mcp.port }}"
+            - name: METAPROMPT_CONFIG_FILE
+              value: /etc/metaprompt/config.json
+            - name: METAPROMPT_STATIC_USERS_FILE
+              value: /etc/metaprompt/secrets/static-users.json
+            - name: METAPROMPT_RUN_TOKEN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: metaprompt-tokens
+                  key: run-token-secret
+            - name: METAPROMPT_BEDROCK
+              value: {{ .Values.bedrock.enabled | ternary "1" "0" | quote }}
+            - name: AWS_REGION
+              value: {{ .Values.bedrock.region | quote }}
+            - name: METAPROMPT_STORAGE_CLASS
+              value: {{ .Values.storage.storageClass | quote }}
+            - name: METAPROMPT_PVC_SIZE
+              value: {{ .Values.storage.size | quote }}
+            - name: METAPROMPT_JOB_PULL_POLICY
+              value: {{ .Values.image.pullPolicy | quote }}
+            - name: METAPROMPT_GITSYNC
+              value: {{ .Values.gitSync.enabled | ternary "1" "0" | quote }}
+            - name: METAPROMPT_GITSYNC_HOSTPATH
+              value: {{ .Values.gitSync.hostPath | quote }}
+            - name: METAPROMPT_CHILD_MCP_PORT
+              value: {{ .Values.mcp.childPort | quote }}
+            {{- if .Values.memory.enabled }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: metaprompt-memory
+                  key: database-url
+            - name: METAPROMPT_EMBEDDING_PROVIDER
+              value: {{ .Values.memory.embeddingProvider | default "hash" | quote }}
+            - name: METAPROMPT_EMBEDDING_DIM
+              value: {{ .Values.memory.embeddingDim | default 64 | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/metaprompt
+            - name: tokens
+              mountPath: /etc/metaprompt/secrets
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: config
+          configMap:
+            name: metaprompt-config
+        - name: tokens
+          secret:
+            secretName: metaprompt-tokens
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metaprompt-mcp
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "metaprompt.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: metaprompt-mcp
+  ports:
+    - name: http
+      port: {{ .Values.mcp.port }}
+      targetPort: http
