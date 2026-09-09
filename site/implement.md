@@ -2,7 +2,7 @@
 
 You are an agent implementing or installing **Metaprompt**. Fetch this file and follow it. Do not invent architecture, install steps, or MCP verbs.
 
-**Humans:** [metaprom.pt](https://metaprom.pt). **Agents:** stay on these markdown files (raw on GitHub Pages). Index: [llms.txt](llms.txt).
+**Humans:** [metaprom.pt](https://metaprom.pt) (how it works). Markdown twin: [how-it-works.md](how-it-works.md). **Agents:** stay on these markdown files (raw on GitHub Pages). Index: [llms.txt](llms.txt).
 
 ```bash
 curl -fsSL https://metaprom.pt/implement.md
@@ -40,6 +40,7 @@ Do not violate these. If a request conflicts, follow this file.
 
 | File | When |
 | --- | --- |
+| [how-it-works.md](how-it-works.md) | Full architecture (landing page twin). |
 | [implement.md](implement.md) | This brief (invariants + use). Start here. |
 | [setup.md](setup.md) | Choose an install playbook. |
 | [setup/k3s.md](setup/k3s.md) | Local cluster (Apple `container k8s` / k3d fallback). |

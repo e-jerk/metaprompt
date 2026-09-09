@@ -14,7 +14,7 @@ A **parent** is whoever called `run.create`. Every child is a **Kubernetes Job**
 | `adapters/*` | Images (mcp, runner, stub, opencode, claude-code, codex, cursor) |
 | `deploy/chart` | Generic Helm chart (`values-k3s.yaml`, `values-eks.yaml`, `values-gke.yaml`) |
 | `skills/` | Harness-native install/build playbooks |
-| `site/` | GitHub Pages + CNAME `metaprom.pt`. Agents: `site/implement.md` |
+| `site/` | GitHub Pages + CNAME `metaprom.pt`. Landing: how it works. Agents: `implement.md` |
 
 ## GitHub
 

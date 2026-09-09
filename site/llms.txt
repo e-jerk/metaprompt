@@ -5,6 +5,7 @@ The parent is whoever called run.create. Every child is a Kubernetes Job. Runtim
 
 ## Start
 
+- [How it works](https://metaprom.pt/how-it-works.md): architecture (same as the landing page).
 - [Implement Metaprompt](https://metaprom.pt/implement.md): invariants, MCP tools, install + use. Agents start here.
 - [AGENTS.md](https://metaprom.pt/AGENTS.md): stub that points at implement.md
 - [Setup router](https://metaprom.pt/setup.md): pick an install playbook

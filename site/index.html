@@ -2,25 +2,229 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Metaprompt</title>
+  <title>Metaprompt — how it works</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Metaprompt is a Kubernetes control plane for swappable CLI coding harnesses. Every child is a Job. The control surface is MCP." />
   <style>
-    body { font-family: ui-sans-serif, system-ui, sans-serif; max-width: 42rem; margin: 3rem auto; padding: 0 1.25rem; line-height: 1.55; color: #111; }
-    a { color: #0b57d0; }
-    code { font-size: 0.95em; }
-    h1 { font-size: 1.8rem; }
+    :root {
+      --fg: #111;
+      --muted: #444;
+      --rule: #ddd;
+      --bg: #fff;
+      --code-bg: #f4f4f5;
+      --link: #0b57d0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      max-width: 48rem;
+      margin: 0 auto;
+      padding: 2.25rem 1.25rem 4rem;
+      line-height: 1.55;
+      color: var(--fg);
+      background: var(--bg);
+    }
+    a { color: var(--link); }
+    code, kbd { font-size: 0.9em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    p code, li code, td code, h2 code, h3 code { background: var(--code-bg); padding: 0.08em 0.32em; border-radius: 4px; }
+    pre {
+      background: var(--code-bg);
+      padding: 0.85rem 1rem;
+      overflow-x: auto;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      line-height: 1.45;
+    }
+    pre code { background: none; padding: 0; }
+    h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 0.6rem; }
+    h2 { font-size: 1.35rem; margin: 2.4rem 0 0.7rem; padding-top: 0.4rem; border-top: 1px solid var(--rule); }
+    h3 { font-size: 1.08rem; margin: 1.5rem 0 0.5rem; }
+    .lede { font-size: 1.08rem; color: var(--muted); margin: 0 0 1.25rem; }
+    nav.toc { background: #fafafa; border: 1px solid var(--rule); border-radius: 6px; padding: 0.85rem 1.1rem; margin: 1.5rem 0 2rem; }
+    nav.toc strong { display: block; margin-bottom: 0.4rem; }
+    nav.toc ol { margin: 0; padding-left: 1.2rem; }
+    nav.toc li { margin: 0.2rem 0; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.94rem; margin: 0.8rem 0 1.2rem; }
+    th, td { border: 1px solid var(--rule); padding: 0.4rem 0.55rem; text-align: left; vertical-align: top; }
+    th { background: #fafafa; }
+    .note { border-left: 3px solid #0b57d0; padding: 0.15rem 0 0.15rem 0.85rem; color: var(--muted); }
+    footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--rule); color: var(--muted); font-size: 0.92rem; }
+    header p.links { margin: 0 0 0.25rem; }
   </style>
 </head>
 <body>
-  <h1>Metaprompt</h1>
-  <p>A Kubernetes control plane for swappable CLI coding harnesses (OpenCode, Claude Code, Codex, Cursor, session, stub). The parent is whoever called <code>run.create</code>. Every child is a Job, not an in-container subagent.</p>
+  <header>
+    <h1>Metaprompt</h1>
+    <p class="lede">A Kubernetes control plane for swappable CLI coding harnesses. The control surface is MCP. A parent is whoever called <code>run.create</code> (or <code>session.create</code>). Every child is a Kubernetes Job — never an in-container Task / Agent / subagent.</p>
+    <p class="links">Source: <a href="https://github.com/e-jerk/metaprompt">e-jerk/metaprompt</a> · Images: <code>ghcr.io/e-jerk/metaprompt/*</code> · Runtime: <strong>Bun</strong>, not Node.</p>
+    <p class="links">Agents: fetch <a href="implement.md">implement.md</a> (do not invent steps). Same document in markdown: <a href="how-it-works.md">how-it-works.md</a>. Index: <a href="llms.txt">llms.txt</a>. Install: <a href="setup.md">setup.md</a>.</p>
+  </header>
+
+  <nav class="toc" aria-label="Contents">
+    <strong>How it works</strong>
+    <ol>
+      <li><a href="#shape">The shape of a run</a></li>
+      <li><a href="#mcp">Control surface (MCP)</a></li>
+      <li><a href="#workloads">Sessions vs Jobs</a></li>
+      <li><a href="#cr">HarnessJob and the run token</a></li>
+      <li><a href="#runner">What the runner does in the pod</a></li>
+      <li><a href="#catalog">Harnesses, models, skills, assets</a></li>
+      <li><a href="#party">Parties, coordination, rollup</a></li>
+      <li><a href="#memory">Memory and VCS</a></li>
+      <li><a href="#auth">Auth</a></li>
+      <li><a href="#limits">Limits</a></li>
+      <li><a href="#install">Install</a></li>
+      <li><a href="#not">What it is not</a></li>
+    </ol>
+  </nav>
+
+  <h2 id="shape">The shape of a run</h2>
+  <p>Metaprompt does not run agents inside the plane process. The plane is an MCP server in the cluster (<code>deploy/metaprompt-mcp</code>). It authenticates callers, enforces ACL, writes catalog and party state, and creates Kubernetes objects. The coding work happens in <strong>harness pods</strong>.</p>
+  <ol>
+    <li>A human or parent harness calls the plane: <code>session.create</code> (interactive root) or <code>run.create</code> (one-shot Job).</li>
+    <li>The plane opens a <strong>party</strong> (or joins one), resolves repo / model / skills / MCPs, and mints a <strong>run token</strong>.</li>
+    <li>It applies a <code>HarnessJob</code> CR (<code>metaprompt.io/v1</code>). Mode <code>session</code> → long-running Pod. Mode <code>job</code> → <code>batch/v1</code> Job.</li>
+    <li>The pod starts the runner. The runner starts a loopback child MCP, materializes prefix files (system text, skills, MCP config), then execs the vendor CLI (OpenCode, Claude Code, Codex, Cursor) or the stub.</li>
+    <li>If that harness needs more workers, it calls <code>job.spawn</code>. Each spawn is another Job, nested in the same party, with a parent pointer and a depth increment. Summaries roll up the tree. The parent tails descendants with <code>run.logs</code> / <code>job.progress</code>.</li>
+  </ol>
+  <p class="note">Independent work: one <code>job.spawn</code> with several agents (parallel Jobs). Dependent work: <code>after: [id]</code> or <code>job.wait</code>. Never vendor Task tools.</p>
+
+  <h2 id="mcp">Control surface (MCP)</h2>
+  <p>Callers talk to <code>http://&lt;plane&gt;:3333/mcp</code> with JSON-RPC <code>tools/call</code> and <code>Authorization: Bearer …</code>. In-cluster Jobs use Service <code>http://metaprompt-mcp:3333</code>. On a laptop you port-forward that Service.</p>
+<pre><code>curl -sS http://127.0.0.1:3333/mcp \
+  -H 'Authorization: Bearer alice-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"harness.list","arguments":{}}}'
+</code></pre>
+  <p>Ready check: <code>GET /healthz</code> → <code>{"ok":true}</code>.</p>
+  <p>Tools are fixed names. Do not invent verbs. Groups:</p>
+  <table>
+    <thead><tr><th>Group</th><th>Tools</th></tr></thead>
+    <tbody>
+      <tr><td>Discover</td><td><code>harness.list</code> <code>harness.get</code> <code>model.list</code> <code>skill.list</code> <code>mcp.list</code> <code>repo.list</code> <code>asset.list</code></td></tr>
+      <tr><td>Party / coord</td><td><code>party.create</code> <code>party.get</code> <code>party.list</code> <code>party.add</code> <code>party.close</code> <code>coord.post</code> <code>coord.inbox</code> <code>coord.wait</code> <code>coord.signal</code> <code>coord.barrier</code> <code>coord.handoff</code> <code>coord.members</code> <code>coord.artifact.put</code> <code>coord.artifact.get</code></td></tr>
+      <tr><td>Runs</td><td><code>run.create</code> <code>run.instruct</code> <code>run.wait</code> <code>run.kill</code> <code>run.cancel</code> <code>run.logs</code> <code>run.result</code> <code>run.list</code> <code>run.get</code> <code>run.share</code> <code>run.unshare</code></td></tr>
+      <tr><td>Jobs</td><td><code>job.run</code> <code>job.spawn</code> <code>job.wait</code> <code>job.kill</code> <code>job.logs</code> <code>job.progress</code></td></tr>
+      <tr><td>Self (from a Job)</td><td><code>self.suspend</code> <code>self.exit</code></td></tr>
+      <tr><td>Sessions</td><td><code>session.create</code> <code>session.list</code> <code>session.get</code> <code>session.attach</code> <code>session.delete</code></td></tr>
+      <tr><td>Cron</td><td><code>cron.create</code> <code>cron.list</code> <code>cron.get</code> <code>cron.delete</code> <code>cron.enable</code></td></tr>
+      <tr><td>jj / VCS</td><td><code>jj.status</code> <code>jj.diff</code> <code>jj.log</code> <code>jj.new</code> <code>jj.describe</code> <code>jj.squash</code> <code>jj.rebase</code> <code>jj.bookmark</code> <code>jj.git.fetch</code> <code>jj.git.push</code> <code>vcs.cred.mint</code></td></tr>
+      <tr><td>Memory</td><td><code>memory.put</code> <code>memory.search</code> <code>memory.get</code> <code>memory.delete</code></td></tr>
+    </tbody>
+  </table>
+  <p>Always-on MCP names written into every Job prefix: <code>plane</code>, <code>party</code>, <code>jj</code>. <code>clanker</code> is parent-only (<code>PARENT_ONLY_MCPS</code>). <code>run.create</code> / <code>job.spawn</code> reject it even if an operator adds it to their catalog. Never put Clanker on a Job.</p>
+
+  <h2 id="workloads">Sessions vs Jobs</h2>
+  <table>
+    <thead><tr><th></th><th>Session</th><th>Job</th></tr></thead>
+    <tbody>
+      <tr><td>Create</td><td><code>session.create</code></td><td><code>run.create</code> or <code>job.spawn</code></td></tr>
+      <tr><td>Kubernetes</td><td>Long-running Pod, <code>mode: session</code></td><td><code>batch/v1</code> Job, <code>mode: job</code></td></tr>
+      <tr><td>Default harness</td><td><code>session</code> (fat image: OpenCode, Claude, Codex, Cursor). Stub is rejected.</td><td>Catalog harness you pass (<code>opencode</code>, <code>stub</code>, …)</td></tr>
+      <tr><td>How you attach</td><td><code>kubectl exec</code> → <code>/workspace/.mp/attach</code></td><td>Logs via <code>run.logs</code>; process exits and POSTs complete</td></tr>
+      <tr><td>Children</td><td>Still Jobs via <code>job.spawn</code></td><td>Still Jobs via <code>job.spawn</code></td></tr>
+    </tbody>
+  </table>
+  <p>Interactive root:</p>
+<pre><code>kubectl -n metaprompt port-forward svc/metaprompt-mcp 3333:3333
+bash scripts/session-up.sh          # or: session-up.sh opencode|cursor|claude-code|codex
+# kubectl --context metaprompt -n metaprompt exec -it mp-run-… -c harness -- /workspace/.mp/attach
+</code></pre>
+  <p>Inside the pod: <code>/workspace/.mp/attach</code>, or <code>opencode</code> / <code>cursor</code> / <code>claude</code> / <code>codex</code> / <code>shell</code>.</p>
+  <p>Storage on a Job is <code>tmpfs</code> (emptyDir Memory) or <code>pvc</code>. Sessions use the same workspace volume rules. Local smoke prefers tmpfs.</p>
+
+  <h2 id="cr">HarnessJob and the run token</h2>
+  <p>The CR is the launch record. It carries run id, owner, harness, image, repo, sha, model, party, parent/root, depth, skills, MCP list, assets, storage, and plane URL. It does <strong>not</strong> carry the run token, <code>DATABASE_URL</code>, or VCS PATs.</p>
+  <p>The run token lives in Secret <code>mp-token-&lt;run&gt;</code>, mounted into the pod as <code>METAPROMPT_RUN_TOKEN</code>. The harness uses that bearer against the plane (and the in-pod child MCP proxies with it). Jobs never get the memory database URL; they call <code>memory.*</code> on the plane.</p>
+  <p>Helm release, namespace, and labels stay <code>metaprompt</code>. Do not put <code>repos</code> in Helm config without <code>currentSha</code> — live <code>run.create</code> 409s.</p>
+
+  <h2 id="runner">What the runner does in the pod</h2>
+  <p>Image CMD is <code>bun /app/packages/runner/src/main.ts</code> (Jobs) or <code>session.ts</code> (sessions). Order:</p>
+  <ol>
+    <li><strong>Child MCP</strong> on <code>127.0.0.1:3334</code>. Prefix: <code>party</code> → <code>/mcp</code>, <code>jj</code> → <code>/jj</code>. Proxies party / coord / job / self / <code>jj.git.fetch</code> / <code>jj.git.push</code> / <code>vcs.cred.mint</code> to the plane with the run token. Local <code>jj.*</code> runs in the pod (or stubs if <code>jj</code> is missing). Memory stays on the plane.</li>
+    <li><strong>Workspace pin.</strong> Writes <code>.metaprompt-pin</code> with <code>lowerdir</code>. When git-sync is on, Jobs mount host <code>/var/lib/metaprompt/repos/&lt;name&gt;/current</code> at <code>/repos</code> and set <code>METAPROMPT_LOWERDIR=/repos/&lt;repo&gt;/current</code>. Local k3s leaves git-sync off so smoke does not need the public repo clone.</li>
+    <li><strong>jj colocate</strong> if the binary exists.</li>
+    <li><strong>Prefix files</strong> — system text, always-on MCP schemas, skill names, MCP names — hashed as <code>prefixHash</code> so identical stubs can share cache.</li>
+    <li><strong>Spawn the harness</strong> from <code>commandFor</code> (model flags + prompt). On exit the Job runner POSTs <code>/internal/runs/:id/complete</code>.</li>
+  </ol>
+  <p>Git credential helpers are emptied in the child env. Fetch/push goes through minted creds, not embedded PATs.</p>
+
+  <h2 id="catalog">Harnesses, models, skills, assets</h2>
+  <p>The catalog lives in <code>packages/shared</code> (defaults) and can be overlaid from Helm <code>config.json</code> for assets, git-sync, Bedrock, and auth — not a second control plane.</p>
+  <table>
+    <thead><tr><th>Harness</th><th>Image</th><th>Default model</th></tr></thead>
+    <tbody>
+      <tr><td><code>session</code></td><td><code>…/session:latest</code></td><td><code>none</code> — fat root CLI image</td></tr>
+      <tr><td><code>opencode</code></td><td><code>…/opencode:latest</code></td><td><code>mimo-v2.5-free</code> (also <code>deepseek-v4-flash-free</code>, <code>big-pickle</code>)</td></tr>
+      <tr><td><code>claude-code</code></td><td><code>…/claude-code:latest</code></td><td><code>bedrock-sonnet</code> (needs <code>bedrock.enabled</code>)</td></tr>
+      <tr><td><code>codex</code></td><td><code>…/codex:latest</code></td><td><code>gpt-5</code></td></tr>
+      <tr><td><code>cursor</code></td><td><code>…/cursor:latest</code></td><td><code>auto</code> (also <code>composer-2.5</code>)</td></tr>
+      <tr><td><code>stub</code></td><td><code>…/stub:latest</code></td><td><code>none</code> — Jobs / smoke only</td></tr>
+    </tbody>
+  </table>
+  <p>Local k3s has Bedrock off. <code>run.create</code> with <code>claude-code</code> + <code>bedrock-sonnet</code> 409s there. Use <code>opencode</code> + a free Zen model, <code>session</code>, or <code>stub</code>.</p>
+  <p>Each harness lists <code>disallowedTools: Task, Agent, subagent</code>. Parallelism is <code>job.spawn</code>.</p>
+  <p><strong>Skills</strong> are named catalog entries (or inline / URL) hashed into the prefix. Paths the runner looks at: <code>skills</code>, <code>.cursor/skills</code>, <code>.grok/skills</code>.</p>
+  <p><strong>Assets</strong> — after <code>asset.list</code>, <code>run.create</code> / <code>session.create</code> may pass <code>assets: ["eval-set"]</code>. The plane checks <code>readers</code>, then mounts read-only. Volume kinds: <code>pvc:…</code>, <code>hostPath:…</code>, <code>configMap:…</code>, <code>secret:…</code>, <code>emptyDir</code> / <code>emptyDir:Memory</code>. Local fixture: <code>hostPath:/var/lib/metaprompt/assets/eval-set</code>.</p>
+  <p><strong>Repos</strong> have readers/writers, <code>currentSha</code>, and <code>currentGeneration</code>. The default local repo is <code>app</code> with a fixture SHA so Jobs can start without git-sync.</p>
+
+  <h2 id="party">Parties, coordination, rollup</h2>
+  <p>A party is the shared room for a root and its descendants. Members get coord inbox, artifacts, and barriers. <code>coord.handoff</code> creates another run in that party. <code>job.spawn</code> can open a nested party for a parallel group.</p>
+  <p>When children finish, the plane rolls summaries up the tree (capped bytes). <code>run.get</code> with <code>summaryTree</code> shows the rollup. Parents should poll <code>job.progress</code> instead of stuffing descendant logs into the next prompt.</p>
+  <p>Kill can cascade. Share/unshare is ACL on the run (local smoke: bob is denied until <code>run.share</code>).</p>
+
+  <h2 id="memory">Memory and VCS</h2>
+  <p>When <code>memory.enabled</code>, the plane talks to Postgres + pgvector. Embedding default on k3s is <code>hash</code> (no API key). Scopes: <code>user</code>, <code>party</code>, <code>repo</code>. Jobs put/search through the plane MCP; they do not mount the database.</p>
+  <p>Version control is <strong>jj-first</strong>. <code>jj.git.fetch</code> / <code>jj.git.push</code> mint short-lived creds via <code>vcs.cred.mint</code>. Do not embed remotes or PATs in Job specs.</p>
+
+  <h2 id="auth">Auth</h2>
+  <p><strong>Local k3s</strong> static users (not for EKS):</p>
   <ul>
-    <li>Control surface is MCP, not kubectl-first.</li>
-    <li>Copy-on-write workspaces over a shared git-sync mirror. Version control is jj-first.</li>
-    <li>Nested parties, summary rollup, ancestor log tail, parallel <code>job.spawn</code>.</li>
-    <li>Local: Apple <code>container k8s</code> (or k3d). Existing EKS/GKE. Clanker Cloud is optional.</li>
+    <li><code>Bearer local-dev-token</code> — admin</li>
+    <li><code>Bearer alice-token</code></li>
+    <li><code>Bearer bob-token</code></li>
   </ul>
-  <p><strong>Agents:</strong> fetch and follow <a href="implement.md">implement.md</a> (do not invent steps). Index: <a href="llms.txt">llms.txt</a>. Install router: <a href="setup.md">setup.md</a>.</p>
-  <p>Images: <code>ghcr.io/e-jerk/metaprompt/*</code>. Source: <a href="https://github.com/e-jerk/metaprompt">e-jerk/metaprompt</a>.</p>
+  <p><strong>EKS / GKE</strong> — GitHub Enterprise OIDC JWT. User is JWT <code>actor</code> (or <code>sub</code>). Org/repo/team claims map to groups. This is not EKS IRSA and not Bedrock IRSA; those can coexist.</p>
+  <p>A Job’s identity is the run token, scoped to that run. Plane secrets stay off the CR.</p>
+
+  <h2 id="limits">Limits</h2>
+  <p>Defaults in the catalog (overridable in Helm <code>limits</code>):</p>
+  <table>
+    <thead><tr><th>Limit</th><th>Default</th></tr></thead>
+    <tbody>
+      <tr><td>Max spawn depth</td><td>4</td></tr>
+      <tr><td>Max running per user</td><td>16</td></tr>
+      <tr><td>Max parallel per parent</td><td>8</td></tr>
+      <tr><td>Max attempts</td><td>8</td></tr>
+      <tr><td>Suspend TTL</td><td>86400s</td></tr>
+      <tr><td>Max skill / memory bytes</td><td>32768</td></tr>
+      <tr><td>Max summary / rollup</td><td>2048 / 8192</td></tr>
+      <tr><td>Log tail</td><td>50 default, 500 max</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="install">Install</h2>
+  <p>Pick a playbook from <a href="setup.md">setup.md</a>. Clanker Cloud is optional — local Apple <code>container k8s</code>, k3d, existing EKS, and existing GKE do not need it.</p>
+<pre><code>git clone https://github.com/e-jerk/metaprompt.git
+cd metaprompt
+bun install &amp;&amp; bun test
+make k3s-up
+make cluster-smoke
+kubectl --context metaprompt -n metaprompt port-forward svc/metaprompt-mcp 3333:3333
+</code></pre>
+  <p>Images: Apple Silicon <code>container build</code> + <code>container k8s load-image</code>; CI <code>docker buildx bake</code>. See <a href="setup/build.md">setup/build.md</a>.</p>
+  <p>Repo layout: <code>packages/shared</code> (types, ACL, catalog, prefix, spawn, rollup), <code>packages/mcp</code> (plane), <code>packages/runner</code> (pod), <code>adapters/*</code> (images), <code>deploy/chart</code> (Helm), <code>skills/</code> (playbooks synced onto this site).</p>
+
+  <h2 id="not">What it is not</h2>
+  <ul>
+    <li>Not a vendor Task / in-process subagent runtime. Children are Jobs.</li>
+    <li>Not <code>clanker k8s deploy</code> (naive Deployment + LoadBalancer). The chart owns the release.</li>
+    <li>Not a requirement to buy Clanker. DevOps / Secretary / hosted sandboxes stay laptop-optional.</li>
+    <li>Not a place to put <code>DATABASE_URL</code>, PATs, or run tokens on the CR.</li>
+  </ul>
+
+  <footer>
+    <p>Agents implementing or installing: <a href="implement.md">implement.md</a>. Humans reading this page and the markdown twin: <a href="how-it-works.md">how-it-works.md</a>.</p>
+  </footer>
 </body>
 </html>
