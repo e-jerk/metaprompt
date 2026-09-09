@@ -14,6 +14,19 @@ data:
         "enabled": {{ .Values.bedrock.enabled }},
         "region": {{ .Values.bedrock.region | quote }}
       },
+      {{- $ac := .Values.bedrock.agentcore | default dict }}
+      "agentcore": {
+        "enabled": {{ $ac.enabled | default false }},
+        "region": {{ $ac.region | default .Values.bedrock.region | quote }},
+        "harnessArn": {{ $ac.harnessArn | default "" | quote }},
+        "runtimeArn": {{ $ac.runtimeArn | default "" | quote }},
+        "qualifier": {{ $ac.qualifier | default "" | quote }},
+        "gatewayUrl": {{ $ac.gatewayUrl | default "" | quote }},
+        "gatewayArn": {{ $ac.gatewayArn | default "" | quote }},
+        "attachPlaneMcp": {{ hasKey $ac "attachPlaneMcp" | ternary $ac.attachPlaneMcp true }},
+        "enableBrowser": {{ $ac.enableBrowser | default false }},
+        "enableCodeInterpreter": {{ $ac.enableCodeInterpreter | default false }}
+      },
       "oidc": {{ .Values.auth.oidc | toJson }},
       "gitSync": {
         "enabled": {{ .Values.gitSync.enabled }},

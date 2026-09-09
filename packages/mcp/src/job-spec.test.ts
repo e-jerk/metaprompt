@@ -110,4 +110,36 @@ describe("HarnessJob projection", () => {
   it("skips unknown asset names when resolving mounts", () => {
     expect(resolveAssetMounts(["missing"], defaultConfig().assets)).toEqual([]);
   });
+
+  it("projects AgentCore ARNs onto the Job env and never a run token", async () => {
+    const plane = new Plane(
+      defaultConfig({
+        agentcore: {
+          enabled: true,
+          region: "us-west-2",
+          harnessArn: "arn:aws:bedrock-agentcore:us-west-2:1:harness/demo-abcdefghij",
+          gatewayArn: "arn:aws:bedrock-agentcore:us-west-2:1:gateway/g-abcdefghij",
+          enableBrowser: true,
+        },
+      }),
+    );
+    const run = await plane.createRun(alice(plane), {
+      harness: "agentcore",
+      repo: "app",
+      prompt: "ping",
+      storage: "tmpfs",
+    });
+    const spec = specFromRun(run, plane.config, { runToken: "secret-run-token", planeUrl: "http://plane" });
+    expect(spec.agentcore?.harnessArn).toContain("harness/demo-abcdefghij");
+    expect(JSON.stringify(spec)).not.toContain("secret-run-token");
+    const job = jobManifest(spec);
+    expect(job.spec.template.spec.containers[0].env).toEqual(
+      expect.arrayContaining([
+        { name: "METAPROMPT_AGENTCORE", value: "1" },
+        { name: "AWS_REGION", value: "us-west-2" },
+        { name: "METAPROMPT_AGENTCORE_BROWSER", value: "1" },
+      ]),
+    );
+    expect(() => assertNoSecretsInSpec(spec)).not.toThrow();
+  });
 });

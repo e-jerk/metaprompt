@@ -206,7 +206,7 @@ export type CatalogMcp = {
 
 export type ModelEntry = {
   id: string;
-  provider: "cursor" | "bedrock" | "openai" | "opencode" | "none";
+  provider: "cursor" | "bedrock" | "openai" | "opencode" | "agentcore" | "none";
   cursorModel?: string;
   bedrockId?: string;
   openaiModel?: string;
@@ -251,6 +251,21 @@ export type BedrockConfig = {
   region: string;
 };
 
+/** Amazon Bedrock AgentCore (Harness, Runtime, Gateway). Sibling of InvokeModel Bedrock. */
+export type AgentcoreConfig = {
+  enabled: boolean;
+  region: string;
+  harnessArn?: string;
+  runtimeArn?: string;
+  qualifier?: string;
+  gatewayUrl?: string;
+  gatewayArn?: string;
+  gatewayName?: string;
+  attachPlaneMcp?: boolean;
+  enableBrowser?: boolean;
+  enableCodeInterpreter?: boolean;
+};
+
 export type OidcConfig = {
   provider: string;
   issuer: string;
@@ -273,6 +288,7 @@ export type PlaneConfig = {
   namespace: string;
   limits: PlaneLimits;
   bedrock: BedrockConfig;
+  agentcore: AgentcoreConfig;
   oidc?: OidcConfig;
   staticUsers: StaticUser[];
   runTokenSecret: string;

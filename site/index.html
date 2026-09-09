@@ -17,7 +17,7 @@
     * { box-sizing: border-box; }
     body {
       font-family: ui-sans-serif, system-ui, sans-serif;
-      max-width: 48rem;
+      max-width: 52rem;
       margin: 0 auto;
       padding: 2.25rem 1.25rem 4rem;
       line-height: 1.55;
@@ -55,7 +55,7 @@
 <body>
   <header>
     <h1>Metaprompt</h1>
-    <p class="lede">A Kubernetes control plane for swappable CLI coding harnesses. The control surface is MCP. A parent is whoever called <code>run.create</code> (or <code>session.create</code>). Every child is a Kubernetes Job — never an in-container Task / Agent / subagent.</p>
+    <p class="lede">A Kubernetes control plane for swappable CLI coding harnesses. The control surface is MCP. A parent is whoever called <code>run.create</code> (or <code>session.create</code>). Every child is a Kubernetes Job — never an in-container Task / Agent / subagent. <a href="#use">Prompt it for swarms and adversarial agents</a>.</p>
     <p class="links">Source: <a href="https://github.com/e-jerk/metaprompt">e-jerk/metaprompt</a> · Images: <code>ghcr.io/e-jerk/metaprompt/*</code> · Runtime: <strong>Bun</strong>, not Node.</p>
     <p class="links">Agents: fetch <a href="implement.md">implement.md</a> (do not invent steps). Same document in markdown: <a href="how-it-works.md">how-it-works.md</a>. Index: <a href="llms.txt">llms.txt</a>. Install: <a href="setup.md">setup.md</a>.</p>
   </header>
@@ -63,6 +63,7 @@
   <nav class="toc" aria-label="Contents">
     <strong>How it works</strong>
     <ol>
+      <li><a href="#use">How to use it (swarms, adversaries)</a></li>
       <li><a href="#shape">The shape of a run</a></li>
       <li><a href="#mcp">Control surface (MCP)</a></li>
       <li><a href="#workloads">Sessions vs Jobs</a></li>
@@ -77,6 +78,123 @@
       <li><a href="#not">What it is not</a></li>
     </ol>
   </nav>
+
+  <h2 id="use">How to use it</h2>
+  <p>You do not prompt Metaprompt as a chatbot API. You start a <strong>parent</strong> (session or Job), then that parent calls plane MCP. Independent workers are one <code>job.spawn</code>. Adversaries are more workers in the same party with opposite instructions. They share <code>coord.*</code> and artifacts. They never use vendor Task / Agent / subagent tools.</p>
+  <p>Pick harnesses your cluster can run. Local k3s: <code>opencode</code> (free Zen models) or <code>stub</code>. EKS with Bedrock: <code>claude-code</code>. AgentCore enabled: <code>agentcore</code> (Job-only). Mix them in one spawn.</p>
+
+  <h3>1. Start a parent</h3>
+  <p>Laptop, after port-forward. Local token shown; on EKS use a GitHub OIDC JWT.</p>
+<pre><code>curl -sS http://127.0.0.1:3333/mcp \
+  -H 'Authorization: Bearer alice-token' \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"session.create","arguments":{"repo":"app"}}}'
+# attach: bash scripts/session-up.sh
+</code></pre>
+  <p>Or a one-shot root Job: <code>run.create</code> <code>{ "harness": "opencode", "repo": "app", "prompt": "…" }</code>. Children still spawn from inside that Job (it has a run token). You cannot call <code>job.spawn</code> with only <code>alice-token</code>.</p>
+
+  <h3>2. What you type to the parent</h3>
+  <p>The parent already has system text that says to use <code>job.spawn</code>. Your prompt should name roles, say they are parallel Jobs, and forbid in-process agents.</p>
+<pre><code>Ship a login rate limiter on repo app.
+
+Spawn a swarm with job.spawn (one call, several agents). Do not use Task, Agent, or subagent tools.
+
+Roles:
+- implementer: write the smallest correct change (jj, no git remotes).
+- adversary: try to bypass the limiter; write findings only, do not "help" the implementer.
+- tester: add tests that fail on the bypass, then pass on the fix.
+
+They share this party. Each one coord.artifact.put their result (name: impl / adv / test).
+Do not wait by pasting logs. Use job.progress, then job.wait.
+
+After all three finish, spawn judge (after: [impl, adv, test]) to keep only what survives the adversary. coord.artifact.put name=verdict.
+Then summarize from run.get summaryTree.
+</code></pre>
+
+  <h3>3. Swarm — parallel Jobs</h3>
+  <p>One <code>job.spawn</code>. Distinct <code>id</code>s. No <code>after</code> means they start together (up to <code>maxParallelPerParent</code>, default 8). The plane opens a nested party; the parent is an observer.</p>
+<pre><code>{
+  "name": "job.spawn",
+  "arguments": {
+    "agents": [
+      {
+        "id": "auth",
+        "harness": "opencode",
+        "prompt": "Implement /login rate limiting. Put the patch summary in coord.artifact.put name=auth. Use jj. When done, self.exit with a short summary."
+      },
+      {
+        "id": "docs",
+        "harness": "opencode",
+        "prompt": "Write the rate-limit docs from the repo as it is now. coord.artifact.put name=docs. Do not wait for auth."
+      },
+      {
+        "id": "bench",
+        "harness": "opencode",
+        "prompt": "Add a small bench or load script for /login. coord.artifact.put name=bench."
+      }
+    ]
+  }
+}
+</code></pre>
+  <p>Then <code>job.progress</code> (heartbeat, not a log dump) and <code>job.wait</code>. <code>run.get</code> with <code>summaryTree: true</code> rolls child summaries up.</p>
+
+  <h3>4. Adversaries that still work together</h3>
+  <p>Same party, opposite goals. They do not merge in-process. The implementer writes; the adversary attacks; a later Job (<code>after</code>) is the only one allowed to reconcile. That is how they “work together” — shared party, artifacts, and a judge — not a group chat inside one pod.</p>
+<pre><code>{
+  "name": "job.spawn",
+  "arguments": {
+    "agents": [
+      {
+        "id": "impl",
+        "harness": "opencode",
+        "prompt": "You are the implementer. Add login rate limiting. Do not read the adversary. coord.artifact.put name=impl when the change compiles. jj only."
+      },
+      {
+        "id": "adv",
+        "harness": "claude-code",
+        "model": "bedrock-sonnet",
+        "prompt": "You are the adversary. Do not implement the feature. Find bypasses (header spoof, IPv6, burst, bypass paths). coord.artifact.put name=adv a repro list. Be hostile to the design, not to the party."
+      },
+      {
+        "id": "test",
+        "harness": "codex",
+        "prompt": "You are the tester. Write tests that would catch the bypasses an attacker would try. coord.artifact.put name=test. Do not soften failing tests to make impl look good."
+      },
+      {
+        "id": "judge",
+        "harness": "agentcore",
+        "after": ["impl", "adv", "test"],
+        "prompt": "You are the judge. coord.artifact.get impl, adv, test. job.progress on those runs. Keep only changes that survive the adversary. If adv still wins, spawn nothing else; self.exit with fail and a punch-list. If impl holds, note residual risk. coord.artifact.put name=verdict."
+      }
+    ]
+  }
+}
+</code></pre>
+  <p><code>claude-code</code> + <code>bedrock-sonnet</code> needs <code>bedrock.enabled</code>. <code>agentcore</code> needs AgentCore configured and is Job-only. If those are off, use <code>opencode</code> for every role (still four Jobs). Do not collapse them into one prompt.</p>
+  <p>Optional after spawn: children <code>coord.post</code> status; a coordinator <code>coord.barrier</code> before the judge reads. <code>coord.handoff</code> starts another run in the same party when you want a human-reviewable next step instead of another spawn edge.</p>
+
+  <h3>5. Dependent pipeline (not a swarm)</h3>
+  <p>Use <code>after: [id]</code> when B must see A’s result. That is a DAG of Jobs, not parallel work.</p>
+<pre><code>{
+  "name": "job.spawn",
+  "arguments": {
+    "agents": [
+      { "id": "schema", "harness": "opencode", "prompt": "Add the migration. coord.artifact.put name=schema." },
+      { "id": "api", "harness": "opencode", "after": ["schema"], "prompt": "coord.artifact.get schema. Implement the API. coord.artifact.put name=api." },
+      { "id": "review", "harness": "opencode", "after": ["api"], "prompt": "Review api vs schema. Do not rewrite unless you find a break. coord.artifact.put name=review." }
+    ]
+  }
+}
+</code></pre>
+
+  <h3>Rules that keep swarms honest</h3>
+  <ul>
+    <li>One <code>job.spawn</code> for the whole graph. Do not spawn in a loop if the work is independent.</li>
+    <li>Give each agent a single job and a named artifact. The adversary must not “help” the implementer.</li>
+    <li>Parents tail with <code>job.progress</code> / <code>run.logs</code>, not by stuffing descendant logs into the next prompt.</li>
+    <li>Depth default max is 4; running per user 16. Kill can <code>cascade</code>.</li>
+    <li>Never pass <code>clanker</code> to a Job. Never put tokens on the CR.</li>
+  </ul>
 
   <h2 id="shape">The shape of a run</h2>
   <p>Metaprompt does not run agents inside the plane process. The plane is an MCP server in the cluster (<code>deploy/metaprompt-mcp</code>). It authenticates callers, enforces ACL, writes catalog and party state, and creates Kubernetes objects. The coding work happens in <strong>harness pods</strong>.</p>
@@ -159,17 +277,18 @@ bash scripts/session-up.sh          # or: session-up.sh opencode|cursor|claude-c
       <tr><td><code>claude-code</code></td><td><code>…/claude-code:latest</code></td><td><code>bedrock-sonnet</code> (needs <code>bedrock.enabled</code>)</td></tr>
       <tr><td><code>codex</code></td><td><code>…/codex:latest</code></td><td><code>gpt-5</code></td></tr>
       <tr><td><code>cursor</code></td><td><code>…/cursor:latest</code></td><td><code>auto</code> (also <code>composer-2.5</code>)</td></tr>
+      <tr><td><code>agentcore</code></td><td><code>…/runner:latest</code></td><td><code>agentcore</code> — Bedrock AgentCore Harness or Runtime (Job-only)</td></tr>
       <tr><td><code>stub</code></td><td><code>…/stub:latest</code></td><td><code>none</code> — Jobs / smoke only</td></tr>
     </tbody>
   </table>
-  <p>Local k3s has Bedrock off. <code>run.create</code> with <code>claude-code</code> + <code>bedrock-sonnet</code> 409s there. Use <code>opencode</code> + a free Zen model, <code>session</code>, or <code>stub</code>.</p>
+  <p>Local k3s has Bedrock and AgentCore off. <code>run.create</code> with <code>claude-code</code> + <code>bedrock-sonnet</code> or <code>harness: "agentcore"</code> 409s there. Use <code>opencode</code> + a free Zen model, <code>session</code>, or <code>stub</code>. AgentCore is Job-only (<code>run.create</code> / <code>job.spawn</code>); the runner calls <code>InvokeHarness</code> or <code>InvokeAgentRuntime</code>. Optional Gateway URL is catalog MCP <code>agentcore-gateway</code>.</p>
   <p>Each harness lists <code>disallowedTools: Task, Agent, subagent</code>. Parallelism is <code>job.spawn</code>.</p>
   <p><strong>Skills</strong> are named catalog entries (or inline / URL) hashed into the prefix. Paths the runner looks at: <code>skills</code>, <code>.cursor/skills</code>, <code>.grok/skills</code>.</p>
   <p><strong>Assets</strong> — after <code>asset.list</code>, <code>run.create</code> / <code>session.create</code> may pass <code>assets: ["eval-set"]</code>. The plane checks <code>readers</code>, then mounts read-only. Volume kinds: <code>pvc:…</code>, <code>hostPath:…</code>, <code>configMap:…</code>, <code>secret:…</code>, <code>emptyDir</code> / <code>emptyDir:Memory</code>. Local fixture: <code>hostPath:/var/lib/metaprompt/assets/eval-set</code>.</p>
   <p><strong>Repos</strong> have readers/writers, <code>currentSha</code>, and <code>currentGeneration</code>. The default local repo is <code>app</code> with a fixture SHA so Jobs can start without git-sync.</p>
 
   <h2 id="party">Parties, coordination, rollup</h2>
-  <p>A party is the shared room for a root and its descendants. Members get coord inbox, artifacts, and barriers. <code>coord.handoff</code> creates another run in that party. <code>job.spawn</code> can open a nested party for a parallel group.</p>
+  <p>A party is the shared room for a root and its descendants. Members get coord inbox, artifacts, and barriers. <code>coord.handoff</code> creates another run in that party. <code>job.spawn</code> can open a nested party for a parallel group. Concrete swarm and adversary prompts: <a href="#use">How to use it</a>.</p>
   <p>When children finish, the plane rolls summaries up the tree (capped bytes). <code>run.get</code> with <code>summaryTree</code> shows the rollup. Parents should poll <code>job.progress</code> instead of stuffing descendant logs into the next prompt.</p>
   <p>Kill can cascade. Share/unshare is ACL on the run (local smoke: bob is denied until <code>run.share</code>).</p>
 
@@ -184,7 +303,7 @@ bash scripts/session-up.sh          # or: session-up.sh opencode|cursor|claude-c
     <li><code>Bearer alice-token</code></li>
     <li><code>Bearer bob-token</code></li>
   </ul>
-  <p><strong>EKS / GKE</strong> — GitHub Enterprise OIDC JWT. User is JWT <code>actor</code> (or <code>sub</code>). Org/repo/team claims map to groups. This is not EKS IRSA and not Bedrock IRSA; those can coexist.</p>
+  <p><strong>EKS / GKE</strong> — GitHub Enterprise OIDC JWT. User is JWT <code>actor</code> (or <code>sub</code>). Org/repo/team claims map to groups. This is not EKS IRSA and not Bedrock / AgentCore IRSA; those can coexist on the job service account.</p>
   <p>A Job’s identity is the run token, scoped to that run. Plane secrets stay off the CR.</p>
 
   <h2 id="limits">Limits</h2>

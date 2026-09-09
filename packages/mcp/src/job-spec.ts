@@ -95,6 +95,20 @@ export function specFromRun(run: Run, config: PlaneConfig, extras?: StartExtras)
     },
     lowerdir: run.repo ? `/repos/${run.repo}/current` : "/repos/current",
     childMcpPort: Number(process.env.METAPROMPT_CHILD_MCP_PORT ?? 3334),
+    ...(run.harness === "agentcore"
+      ? {
+          agentcore: {
+            region: config.agentcore.region,
+            harnessArn: config.agentcore.harnessArn,
+            runtimeArn: config.agentcore.runtimeArn,
+            qualifier: config.agentcore.qualifier,
+            gatewayArn: config.agentcore.gatewayArn,
+            attachPlaneMcp: config.agentcore.attachPlaneMcp,
+            enableBrowser: config.agentcore.enableBrowser,
+            enableCodeInterpreter: config.agentcore.enableCodeInterpreter,
+          },
+        }
+      : {}),
   };
 }
 
@@ -159,6 +173,19 @@ export function envFromSpec(spec: HarnessJobSpec): Record<string, { value?: stri
     METAPROMPT_LOWERDIR: { value: spec.lowerdir ?? "/repos/current" },
     METAPROMPT_CHILD_MCP_URL: { value: `http://127.0.0.1:${spec.childMcpPort ?? 3334}` },
     METAPROMPT_CHILD_MCP_PORT: { value: String(spec.childMcpPort ?? 3334) },
+    ...(spec.agentcore
+      ? {
+          AWS_REGION: { value: spec.agentcore.region },
+          METAPROMPT_AGENTCORE: { value: "1" },
+          METAPROMPT_AGENTCORE_HARNESS_ARN: { value: str(spec.agentcore.harnessArn) },
+          METAPROMPT_AGENTCORE_RUNTIME_ARN: { value: str(spec.agentcore.runtimeArn) },
+          METAPROMPT_AGENTCORE_QUALIFIER: { value: str(spec.agentcore.qualifier) },
+          METAPROMPT_AGENTCORE_GATEWAY_ARN: { value: str(spec.agentcore.gatewayArn) },
+          METAPROMPT_AGENTCORE_ATTACH_PLANE: { value: spec.agentcore.attachPlaneMcp === false ? "0" : "1" },
+          METAPROMPT_AGENTCORE_BROWSER: { value: spec.agentcore.enableBrowser ? "1" : "0" },
+          METAPROMPT_AGENTCORE_CODE: { value: spec.agentcore.enableCodeInterpreter ? "1" : "0" },
+        }
+      : {}),
   };
 }
 

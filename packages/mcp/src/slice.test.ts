@@ -169,6 +169,27 @@ describe("vertical slice", () => {
     });
   });
 
+  it("10b. AgentCore is Job-only and requires a harness or runtime ARN", async () => {
+    const off = plane();
+    const { alice } = users(off);
+    await expect(off.createRun(alice, { harness: "agentcore", repo: "app", prompt: "ping" })).rejects.toThrow(
+      /AgentCore not configured/,
+    );
+    await expect(off.sessionCreate(alice, { harness: "agentcore", repo: "app" })).rejects.toThrow(/Job-only/);
+    const on = plane({
+      agentcore: {
+        enabled: true,
+        region: "us-east-1",
+        harnessArn: "arn:aws:bedrock-agentcore:us-east-1:1:harness/demo-abcdefghij",
+      },
+    });
+    const { alice: a2 } = users(on);
+    const run = await on.createRun(a2, { harness: "agentcore", repo: "app", prompt: "ping", storage: "tmpfs" });
+    expect(run.harness).toBe("agentcore");
+    expect(run.resolvedModel).toMatchObject({ provider: "agentcore" });
+    expect(on.modelList("agentcore").some((m) => m.id === "agentcore")).toBe(true);
+  });
+
   it("11. jj mint ACL; no PAT on the run record", async () => {
     const p = plane();
     const { alice, bob } = users(p);

@@ -127,6 +127,19 @@ export function loadConfig(): PlaneConfig {
       enabled: process.env.METAPROMPT_BEDROCK === "1" || Boolean(merged.bedrock?.enabled),
       region: process.env.AWS_REGION ?? merged.bedrock?.region ?? "us-east-1",
     },
+    agentcore: {
+      enabled: process.env.METAPROMPT_AGENTCORE === "1" || Boolean(merged.agentcore?.enabled),
+      region: process.env.AWS_REGION ?? merged.agentcore?.region ?? merged.bedrock?.region ?? "us-east-1",
+      harnessArn: process.env.METAPROMPT_AGENTCORE_HARNESS_ARN ?? merged.agentcore?.harnessArn,
+      runtimeArn: process.env.METAPROMPT_AGENTCORE_RUNTIME_ARN ?? merged.agentcore?.runtimeArn,
+      qualifier: process.env.METAPROMPT_AGENTCORE_QUALIFIER ?? merged.agentcore?.qualifier,
+      gatewayUrl: process.env.METAPROMPT_AGENTCORE_GATEWAY_URL ?? merged.agentcore?.gatewayUrl,
+      gatewayArn: process.env.METAPROMPT_AGENTCORE_GATEWAY_ARN ?? merged.agentcore?.gatewayArn,
+      gatewayName: merged.agentcore?.gatewayName,
+      attachPlaneMcp: merged.agentcore?.attachPlaneMcp,
+      enableBrowser: merged.agentcore?.enableBrowser,
+      enableCodeInterpreter: merged.agentcore?.enableCodeInterpreter,
+    },
     gitSync: {
       enabled: process.env.METAPROMPT_GITSYNC === "1" || Boolean(merged.gitSync?.enabled),
       hostPath:

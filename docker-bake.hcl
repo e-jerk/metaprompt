@@ -2,66 +2,80 @@ variable "REGISTRY" {
   default = "ghcr.io/e-jerk/metaprompt"
 }
 
-variable "TAG" {
-  default = "latest"
+variable "TAGS" {
+  default = ["latest"]
+  type    = list(string)
+}
+
+variable "PLATFORMS" {
+  default = ["linux/amd64", "linux/arm64"]
+  type    = list(string)
 }
 
 group "default" {
-  targets = ["mcp", "runner", "stub", "opencode", "claude-code", "codex", "cursor"]
+  targets = ["mcp", "runner", "stub", "session", "opencode", "claude-code", "codex", "cursor"]
+}
+
+group "core" {
+  targets = ["mcp", "runner", "stub", "session"]
+}
+
+target "_common" {
+  context   = "."
+  platforms = PLATFORMS
 }
 
 target "mcp" {
-  context = "."
+  inherits   = ["_common"]
   dockerfile = "adapters/mcp/Dockerfile"
-  platforms = ["linux/amd64", "linux/arm64"]
-  tags = ["${REGISTRY}/mcp:${TAG}"]
+  tags       = [for t in TAGS : "${REGISTRY}/mcp:${t}"]
 }
 
 target "runner" {
-  context = "."
+  inherits   = ["_common"]
   dockerfile = "adapters/runner/Dockerfile"
-  platforms = ["linux/amd64", "linux/arm64"]
-  tags = ["${REGISTRY}/runner:${TAG}"]
+  tags       = [for t in TAGS : "${REGISTRY}/runner:${t}"]
 }
 
-target "stub" {
-  context = "."
-  dockerfile = "adapters/stub/Dockerfile"
+target "_from_runner" {
+  inherits = ["_common"]
   contexts = {
     runner = "target:runner"
   }
-  platforms = ["linux/amd64", "linux/arm64"]
-  tags = ["${REGISTRY}/stub:${TAG}"]
+}
+
+target "stub" {
+  inherits   = ["_from_runner"]
+  dockerfile = "adapters/stub/Dockerfile"
+  tags       = [for t in TAGS : "${REGISTRY}/stub:${t}"]
+}
+
+target "session" {
+  inherits   = ["_from_runner"]
+  dockerfile = "adapters/session/Dockerfile"
+  tags       = [for t in TAGS : "${REGISTRY}/session:${t}"]
 }
 
 target "opencode" {
-  context = "."
+  inherits   = ["_from_runner"]
   dockerfile = "adapters/opencode/Dockerfile"
-  contexts = { runner = "target:runner" }
-  platforms = ["linux/amd64", "linux/arm64"]
-  tags = ["${REGISTRY}/opencode:${TAG}"]
+  tags       = [for t in TAGS : "${REGISTRY}/opencode:${t}"]
 }
 
 target "claude-code" {
-  context = "."
+  inherits   = ["_from_runner"]
   dockerfile = "adapters/claude-code/Dockerfile"
-  contexts = { runner = "target:runner" }
-  platforms = ["linux/amd64", "linux/arm64"]
-  tags = ["${REGISTRY}/claude-code:${TAG}"]
+  tags       = [for t in TAGS : "${REGISTRY}/claude-code:${t}"]
 }
 
 target "codex" {
-  context = "."
+  inherits   = ["_from_runner"]
   dockerfile = "adapters/codex/Dockerfile"
-  contexts = { runner = "target:runner" }
-  platforms = ["linux/amd64", "linux/arm64"]
-  tags = ["${REGISTRY}/codex:${TAG}"]
+  tags       = [for t in TAGS : "${REGISTRY}/codex:${t}"]
 }
 
 target "cursor" {
-  context = "."
+  inherits   = ["_from_runner"]
   dockerfile = "adapters/cursor/Dockerfile"
-  contexts = { runner = "target:runner" }
-  platforms = ["linux/amd64", "linux/arm64"]
-  tags = ["${REGISTRY}/cursor:${TAG}"]
+  tags       = [for t in TAGS : "${REGISTRY}/cursor:${t}"]
 }

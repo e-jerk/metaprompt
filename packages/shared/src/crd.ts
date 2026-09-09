@@ -51,6 +51,16 @@ export type HarnessJobSpec = {
   gitSync?: { enabled: boolean; hostPath: string };
   lowerdir?: string;
   childMcpPort?: number;
+  agentcore?: {
+    region: string;
+    harnessArn?: string;
+    runtimeArn?: string;
+    qualifier?: string;
+    gatewayArn?: string;
+    attachPlaneMcp?: boolean;
+    enableBrowser?: boolean;
+    enableCodeInterpreter?: boolean;
+  };
 };
 
 export type HarnessJobStatus = {

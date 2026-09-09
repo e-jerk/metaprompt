@@ -1,4 +1,5 @@
 export * from "./acl.js";
+export * from "./agentcore.js";
 export * from "./auth.js";
 export * from "./catalog.js";
 export * from "./crd.js";

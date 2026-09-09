@@ -2,17 +2,37 @@ name: images
 on:
   push:
     branches: [main]
+    paths:
+      - "adapters/**"
+      - "packages/**"
+      - "package.json"
+      - "bun.lock"
+      - "docker-bake.hcl"
+      - ".github/workflows/images.yml"
   pull_request:
+    paths:
+      - "adapters/**"
+      - "packages/**"
+      - "package.json"
+      - "bun.lock"
+      - "docker-bake.hcl"
+      - ".github/workflows/images.yml"
   workflow_dispatch:
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
   packages: write
   id-token: write
+  attestations: write
 
 jobs:
   bake:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -24,9 +44,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: bake
-        uses: docker/bake-action@v5
+        uses: docker/bake-action@v6
+        env:
+          # HCL variables (not --set). --set TAG=… is a target override and fails.
+          TAGS: ${{ github.event_name == 'pull_request' && github.sha || format('{0},latest', github.sha) }}
+          PLATFORMS: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
         with:
           files: docker-bake.hcl
           push: ${{ github.event_name != 'pull_request' }}
+          provenance: true
+          sbom: true
           set: |
-            TAG=${{ github.sha }}
+            *.cache-from=type=gha
+            *.cache-to=type=gha,mode=max
+      - name: Make packages public
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          owner="${{ github.repository_owner }}"
+          for pkg in mcp runner stub session opencode claude-code codex cursor; do
+            encoded="metaprompt%2F${pkg}"
+            if gh api --method PUT "/orgs/${owner}/packages/container/${encoded}/visibility" -f visibility=public; then
+              echo "public: ${owner}/metaprompt/${pkg}"
+            else
+              echo "could not set ${pkg} public (ok if already public or token lacks admin)"
+            fi
+          done

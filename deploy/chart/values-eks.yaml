@@ -28,6 +28,16 @@ bedrock:
   serviceAccount:
     annotations: {}
     # eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/metaprompt-bedrock
+  agentcore:
+    enabled: false
+    harnessArn: ""
+    runtimeArn: ""
+    qualifier: ""
+    gatewayUrl: ""
+    gatewayArn: ""
+    attachPlaneMcp: true
+    enableBrowser: false
+    enableCodeInterpreter: false
 
 image:
   pullPolicy: Always

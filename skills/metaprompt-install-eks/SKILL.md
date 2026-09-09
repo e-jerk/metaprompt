@@ -1,6 +1,6 @@
 ---
 name: metaprompt-install-eks
-description: Install Metaprompt onto an existing EKS kubecontext with GitHub Enterprise OIDC, GHCR images, optional Bedrock IRSA. No Clanker Cloud subscription required.
+description: Install Metaprompt onto an existing EKS kubecontext with GitHub Enterprise OIDC, GHCR images, optional Bedrock / AgentCore IRSA. No Clanker Cloud subscription required.
 ---
 
 # Install Metaprompt on EKS
@@ -17,7 +17,7 @@ We do not create GitHub Enterprise or Bedrock approvals here.
 - `helm`
 - GHCR pull access for `ghcr.io/e-jerk/metaprompt/*`
 - GitHub Enterprise OIDC issuer (Cloud or Server)
-- Optional: IRSA role for Bedrock (`bedrock:InvokeModel`, `InvokeModelWithResponseStream`, `ListInferenceProfiles`)
+- Optional: IRSA role for Bedrock InvokeModel (`bedrock:InvokeModel`, `InvokeModelWithResponseStream`, `ListInferenceProfiles`) and/or AgentCore (`bedrock-agentcore:InvokeHarness`, `bedrock-agentcore:InvokeAgentRuntime`) on the **job** service account
 
 ## Values
 
@@ -38,7 +38,7 @@ CI: GitHub Actions `id-token: write`. Same verifier; ACL still applies.
 
 This is **not** EKS IRSA and **not** Bedrock IRSA. All three can coexist.
 
-Optional Bedrock:
+Optional Bedrock models (Claude Code / OpenCode) and AgentCore (Job harness `agentcore`):
 
 ```yaml
 bedrock:
@@ -47,7 +47,18 @@ bedrock:
   serviceAccount:
     annotations:
       eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT:role/metaprompt-bedrock
+  agentcore:
+    enabled: true
+    harnessArn: arn:aws:bedrock-agentcore:us-east-1:ACCOUNT:harness/NAME-ID
+    # or runtimeArn: arn:aws:bedrock-agentcore:us-east-1:ACCOUNT:runtime/RUNTIME_ID
+    gatewayUrl: https://GATEWAY_ID.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp
+    gatewayArn: arn:aws:bedrock-agentcore:us-east-1:ACCOUNT:gateway/NAME-ID
+    attachPlaneMcp: true
+    enableBrowser: false
+    enableCodeInterpreter: false
 ```
+
+The Job service account needs those AgentCore actions. The plane does not invoke AgentCore; the runner Job does (SigV4 / IRSA). `session.create` with `agentcore` is rejected — use `run.create` / `job.spawn`. Gateway URL, when set, is catalog MCP `agentcore-gateway` for any harness. Children still spawn with `job.spawn`.
 
 ## Commands
 

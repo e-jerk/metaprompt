@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Create (or reuse) a local k3s cluster, build images, import them, helm-install.
+# Create (or reuse) a local cluster and helm-install Metaprompt.
+#
+# Images come from GHCR (`ghcr.io/e-jerk/metaprompt/*:latest`), published by
+# `.github/workflows/images.yml`. The cluster pulls them. Set
+# METAPROMPT_BUILD_IMAGES=1 to rebuild with Apple `container` (or Docker) and load.
 #
 # Apple Silicon + Apple container 1.3+ (preferred): `container k8s` (kindest node).
 # k3c + rancher/k3s still cannot Ready: kubelet cannot write /proc/sys.
@@ -157,8 +161,30 @@ install_k3d() {
   curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
 }
 
+# Anonymous GHCR token is not a secret; do not print it.
+ghcr_latest_public() {
+  local img="$1"
+  local path token code
+  path="${REGISTRY#ghcr.io/}/${img}"
+  token="$(curl -fsSL "https://ghcr.io/token?service=ghcr.io&scope=repository:${path}:pull" \
+    | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')" || return 1
+  [[ -n "${token}" ]] || return 1
+  code="$(curl -sS -o /dev/null -w '%{http_code}' \
+    -H "Authorization: Bearer ${token}" \
+    -H "Accept: application/vnd.oci.image.index.v1+json" \
+    "https://ghcr.io/v2/${path}/manifests/latest" || true)"
+  [[ "${code}" == "200" ]]
+}
+
+ghcr_core_ready() {
+  local img
+  for img in mcp runner session stub; do
+    ghcr_latest_public "${img}" || return 1
+  done
+}
+
 build_images_container() {
-  echo "Building local images with Apple container (mcp, runner, session)…"
+  echo "Building local images with Apple container (mcp, runner, session, stub)…"
   container build -f "${ROOT}/adapters/mcp/Dockerfile" -t "${REGISTRY}/mcp:latest" "${ROOT}"
   container build -f "${ROOT}/adapters/runner/Dockerfile" -t runner:latest -t "${REGISTRY}/runner:latest" "${ROOT}"
   container build -f "${ROOT}/adapters/session/Dockerfile" -t "${REGISTRY}/session:latest" "${ROOT}"
@@ -200,15 +226,19 @@ up_container_k8s() {
   kubectl wait --for=condition=Ready "node/${CLUSTER}" --timeout=180s 2>/dev/null \
     || kubectl wait --for=condition=Ready node --all --timeout=180s
 
-  build_images_container
-  echo "Loading images into container k8s…"
-  container k8s load-image --name "${CLUSTER}" "${REGISTRY}/mcp:latest"
-  container k8s load-image --name "${CLUSTER}" "${REGISTRY}/runner:latest"
-  container k8s load-image --name "${CLUSTER}" "${REGISTRY}/session:latest"
-  container k8s load-image --name "${CLUSTER}" "${REGISTRY}/stub:latest"
-  echo "Pulling pgvector for local memories…"
-  container image pull pgvector/pgvector:pg16
-  container k8s load-image --name "${CLUSTER}" pgvector/pgvector:pg16
+  if [[ "${IMAGES_SOURCE}" == "local" ]]; then
+    build_images_container
+    echo "Loading images into container k8s…"
+    container k8s load-image --name "${CLUSTER}" "${REGISTRY}/mcp:latest"
+    container k8s load-image --name "${CLUSTER}" "${REGISTRY}/runner:latest"
+    container k8s load-image --name "${CLUSTER}" "${REGISTRY}/session:latest"
+    container k8s load-image --name "${CLUSTER}" "${REGISTRY}/stub:latest"
+    echo "Pulling pgvector for local memories…"
+    container image pull pgvector/pgvector:pg16
+    container k8s load-image --name "${CLUSTER}" pgvector/pgvector:pg16
+  else
+    echo "Cluster will pull ${REGISTRY}/*:latest and pgvector/pgvector:pg16."
+  fi
   ensure_local_path
 }
 
@@ -240,12 +270,16 @@ up_k3c() {
     kubectl config use-context "k3c-${CLUSTER}"
   fi
 
-  build_images_container
-  echo "Importing images into k3c…"
-  k3c image import "${REGISTRY}/mcp:latest" "${CLUSTER}"
-  k3c image import "${REGISTRY}/runner:latest" "${CLUSTER}"
-  k3c image import "${REGISTRY}/session:latest" "${CLUSTER}"
-  k3c image import "${REGISTRY}/stub:latest" "${CLUSTER}"
+  if [[ "${IMAGES_SOURCE}" == "local" ]]; then
+    build_images_container
+    echo "Importing images into k3c…"
+    k3c image import "${REGISTRY}/mcp:latest" "${CLUSTER}"
+    k3c image import "${REGISTRY}/runner:latest" "${CLUSTER}"
+    k3c image import "${REGISTRY}/session:latest" "${CLUSTER}"
+    k3c image import "${REGISTRY}/stub:latest" "${CLUSTER}"
+  else
+    echo "Cluster will pull ${REGISTRY}/*:latest."
+  fi
 }
 
 up_k3d() {
@@ -257,18 +291,32 @@ up_k3d() {
     echo "Creating k3d cluster ${CLUSTER}…"
     k3d cluster create "${CLUSTER}" --agents 1 --wait
   fi
-  build_images_docker
-  echo "Importing images into k3d…"
-  k3d image import \
-    "${REGISTRY}/mcp:latest" \
-    "${REGISTRY}/runner:latest" \
-    "${REGISTRY}/session:latest" \
-    "${REGISTRY}/stub:latest" \
-    -c "${CLUSTER}"
+  if [[ "${IMAGES_SOURCE}" == "local" ]]; then
+    build_images_docker
+    echo "Importing images into k3d…"
+    k3d image import \
+      "${REGISTRY}/mcp:latest" \
+      "${REGISTRY}/runner:latest" \
+      "${REGISTRY}/session:latest" \
+      "${REGISTRY}/stub:latest" \
+      -c "${CLUSTER}"
+  else
+    echo "Cluster will pull ${REGISTRY}/*:latest."
+  fi
 }
 
 BACKEND="$(resolve_backend)"
 echo "Cluster backend: ${BACKEND}"
+if [[ "${METAPROMPT_BUILD_IMAGES:-}" == "1" ]]; then
+  IMAGES_SOURCE=local
+  echo "Images: local build (METAPROMPT_BUILD_IMAGES=1)"
+elif ghcr_core_ready; then
+  IMAGES_SOURCE=ghcr
+  echo "Images: ${REGISTRY}/{mcp,runner,session,stub}:latest from GHCR"
+else
+  IMAGES_SOURCE=local
+  echo "Images: local build (GHCR :latest not public yet; publish via .github/workflows/images.yml)"
+fi
 case "${BACKEND}" in
   container) up_container_k8s ;;
   k3c) up_k3c ;;

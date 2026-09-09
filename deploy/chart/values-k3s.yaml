@@ -19,6 +19,8 @@ storage:
 bedrock:
   enabled: false
   region: us-east-1
+  agentcore:
+    enabled: false
 
 image:
   pullPolicy: IfNotPresent

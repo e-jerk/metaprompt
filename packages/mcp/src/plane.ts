@@ -1,6 +1,8 @@
 import {
   ALWAYS_ON_MCPS,
+  ModelError,
   PARENT_ONLY_MCPS,
+  agentcoreConfigured,
   cacheHintFor,
   canInstructRun,
   canKillRun,
@@ -238,16 +240,29 @@ export class Plane {
     if ((input.kind ?? "job") === "session" && harness.name === "stub") {
       throw new PlaneError(400, "sessions require a real harness (session, opencode, cursor, claude-code, or codex)");
     }
+    if ((input.kind ?? "job") === "session" && harness.name === "agentcore") {
+      throw new PlaneError(400, "agentcore is Job-only; AgentCore sessions stay in AWS (run.create / job.spawn)");
+    }
+    if (harness.name === "agentcore" && !agentcoreConfigured(this.config.agentcore)) {
+      throw new PlaneError(409, "AgentCore not configured");
+    }
     const parent = input.parentRunId ? this.getRun(input.parentRunId) : undefined;
     const depth = parent ? parent.depth + 1 : 0;
     if (depth > this.config.limits.maxDepth) throw new PlaneError(400, "max depth exceeded");
-    const resolvedModel = resolveModel({
-      harness,
-      requested: input.model,
-      models: this.config.models,
-      defaultByHarness: this.config.defaultByHarness,
-      bedrock: this.config.bedrock,
-    });
+    let resolvedModel: ReturnType<typeof resolveModel>;
+    try {
+      resolvedModel = resolveModel({
+        harness,
+        requested: input.model,
+        models: this.config.models,
+        defaultByHarness: this.config.defaultByHarness,
+        bedrock: this.config.bedrock,
+        agentcore: this.config.agentcore,
+      });
+    } catch (err) {
+      if (err instanceof ModelError) throw new PlaneError(409, err.message);
+      throw err;
+    }
     const pin = this.pinRepo(input, identity);
     const assets = this.validateAssets(input.assets ?? parent?.assets, identity);
     const skills = this.validateSkills(input.skills, identity);

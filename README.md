@@ -11,7 +11,7 @@ A **parent** is whoever called `run.create`. Every child is a **Kubernetes Job**
 | `packages/shared` | Types, ACL, prefix hash, spawn DAG, rollup |
 | `packages/mcp` | Control-plane MCP + in-process plane |
 | `packages/runner` | Job runner, prefix files, stub harness |
-| `adapters/*` | Images (mcp, runner, stub, opencode, claude-code, codex, cursor) |
+| `adapters/*` | Images (mcp, runner, stub, opencode, claude-code, codex, cursor, session). `agentcore` reuses the runner image. |
 | `deploy/chart` | Generic Helm chart (`values-k3s.yaml`, `values-eks.yaml`, `values-gke.yaml`) |
 | `skills/` | Harness-native install/build playbooks |
 | `site/` | GitHub Pages + CNAME `metaprom.pt`. Landing: how it works. Agents: `implement.md` |

@@ -27,6 +27,16 @@ bedrock:
   region: us-east-1
   serviceAccount:
     annotations: {}
+  agentcore:
+    enabled: false
+    harnessArn: ""
+    runtimeArn: ""
+    qualifier: ""
+    gatewayUrl: ""
+    gatewayArn: ""
+    attachPlaneMcp: true
+    enableBrowser: false
+    enableCodeInterpreter: false
 
 image:
   pullPolicy: Always

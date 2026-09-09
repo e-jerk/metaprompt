@@ -1,3 +1,4 @@
+import { AGENTCORE_GATEWAY_NAME, defaultAgentcore } from "./agentcore.js";
 import type { CatalogMcp, CatalogSkill, HarnessAdapter, ModelEntry, PlaneConfig, PlaneLimits } from "./types.js";
 
 export const DEFAULT_SYSTEM_TEXT = `You are a Metaprompt harness.
@@ -97,6 +98,15 @@ export function defaultHarnesses(imagePrefix = "ghcr.io/e-jerk/metaprompt"): Har
       secrets: ["openai", "anthropic", "cursor"],
       ...common,
     },
+    {
+      name: "agentcore",
+      image: `${imagePrefix}/runner:latest`,
+      command: ["bun", "/app/packages/runner/src/agentcore.ts"],
+      resumeCommand: ["bun", "/app/packages/runner/src/agentcore.ts"],
+      disallowedTools: ["Task", "Agent", "subagent"],
+      defaultModel: "agentcore",
+      ...common,
+    },
   ];
 }
 
@@ -107,14 +117,15 @@ export const DEFAULT_MODELS: ModelEntry[] = [
     id: "bedrock-sonnet",
     provider: "bedrock",
     bedrockId: "us.anthropic.claude-sonnet-4-6",
-    harnesses: ["claude-code", "opencode"],
+    harnesses: ["claude-code", "opencode", "agentcore"],
   },
   {
     id: "bedrock-opus",
     provider: "bedrock",
     bedrockId: "us.anthropic.claude-opus-4-6",
-    harnesses: ["claude-code", "opencode"],
+    harnesses: ["claude-code", "opencode", "agentcore"],
   },
+  { id: "agentcore", provider: "agentcore", harnesses: ["agentcore"] },
   { id: "gpt-5", provider: "openai", openaiModel: "gpt-5", harnesses: ["codex"] },
   {
     id: "mimo-v2.5-free",
@@ -144,6 +155,7 @@ export const DEFAULT_BY_HARNESS: Record<string, string> = {
   codex: "gpt-5",
   stub: "none",
   session: "none",
+  agentcore: "agentcore",
 };
 
 export const DEFAULT_SKILLS: CatalogSkill[] = [
@@ -179,11 +191,23 @@ export const DEFAULT_MCPS: CatalogMcp[] = [
   { name: "docs", url: "https://example.com/mcp" },
 ];
 
+function catalogMcps(overrides: Partial<PlaneConfig>): CatalogMcp[] {
+  const servers = [...(overrides.mcpServers ?? DEFAULT_MCPS)];
+  const ac = overrides.agentcore;
+  const name = ac?.gatewayName ?? AGENTCORE_GATEWAY_NAME;
+  if (ac?.gatewayUrl && !servers.some((m) => m.name === name || m.url === ac.gatewayUrl)) {
+    servers.push({ name, url: ac.gatewayUrl });
+  }
+  return servers;
+}
+
 export function defaultConfig(overrides: Partial<PlaneConfig> = {}): PlaneConfig {
+  const region = overrides.agentcore?.region ?? overrides.bedrock?.region ?? "us-east-1";
   return {
     namespace: "metaprompt",
     limits: { ...DEFAULT_LIMITS, ...overrides.limits },
-    bedrock: overrides.bedrock ?? { enabled: false, region: "us-east-1" },
+    bedrock: overrides.bedrock ?? { enabled: false, region },
+    agentcore: { ...defaultAgentcore(region), ...overrides.agentcore },
     oidc: overrides.oidc,
     staticUsers: overrides.staticUsers ?? [
       { user: "local-dev", token: "local-dev-token", groups: ["eng"], admin: true },
@@ -214,7 +238,7 @@ export function defaultConfig(overrides: Partial<PlaneConfig> = {}): PlaneConfig
       },
     ],
     skills: overrides.skills ?? DEFAULT_SKILLS,
-    mcpServers: overrides.mcpServers ?? DEFAULT_MCPS,
+    mcpServers: catalogMcps(overrides),
     vcsSecrets: overrides.vcsSecrets ?? { app: { token: "fake-pat-not-for-jobs" } },
     gitSync: overrides.gitSync ?? { enabled: false, hostPath: "/var/lib/metaprompt/repos" },
   };

@@ -58,6 +58,19 @@ spec:
               value: {{ .Values.bedrock.enabled | ternary "1" "0" | quote }}
             - name: AWS_REGION
               value: {{ .Values.bedrock.region | quote }}
+            {{- $ac := .Values.bedrock.agentcore | default dict }}
+            - name: METAPROMPT_AGENTCORE
+              value: {{ $ac.enabled | default false | ternary "1" "0" | quote }}
+            - name: METAPROMPT_AGENTCORE_HARNESS_ARN
+              value: {{ $ac.harnessArn | default "" | quote }}
+            - name: METAPROMPT_AGENTCORE_RUNTIME_ARN
+              value: {{ $ac.runtimeArn | default "" | quote }}
+            - name: METAPROMPT_AGENTCORE_QUALIFIER
+              value: {{ $ac.qualifier | default "" | quote }}
+            - name: METAPROMPT_AGENTCORE_GATEWAY_URL
+              value: {{ $ac.gatewayUrl | default "" | quote }}
+            - name: METAPROMPT_AGENTCORE_GATEWAY_ARN
+              value: {{ $ac.gatewayArn | default "" | quote }}
             - name: METAPROMPT_STORAGE_CLASS
               value: {{ .Values.storage.storageClass | quote }}
             - name: METAPROMPT_PVC_SIZE

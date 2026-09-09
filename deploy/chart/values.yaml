@@ -42,6 +42,17 @@ bedrock:
   region: us-east-1
   serviceAccount:
     annotations: {}
+  # Amazon Bedrock AgentCore (Harness / Runtime / Gateway). Job-only; not kubectl exec.
+  agentcore:
+    enabled: false
+    harnessArn: ""
+    runtimeArn: ""
+    qualifier: ""
+    gatewayUrl: ""
+    gatewayArn: ""
+    attachPlaneMcp: true
+    enableBrowser: false
+    enableCodeInterpreter: false
 
 storage:
   mode: hostpath

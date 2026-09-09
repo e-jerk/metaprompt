@@ -12,5 +12,6 @@ Each catalog harness is an image on top of `runner`. Vendor Task / Agent / subag
 | `ghcr.io/e-jerk/metaprompt/codex` | `adapters/codex` |
 | `ghcr.io/e-jerk/metaprompt/cursor` | `adapters/cursor` |
 | `ghcr.io/e-jerk/metaprompt/session` | `adapters/session` (root exec image: all CLIs) |
+| `ghcr.io/e-jerk/metaprompt/runner` | also the `agentcore` harness (InvokeHarness / InvokeAgentRuntime) |
 
 Runtime is Bun. On Apple Silicon build with `container build` (see `metaprompt-build`); CI uses `docker buildx bake`.

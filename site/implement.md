@@ -14,7 +14,7 @@ Then fetch only the playbook you need. Prefer relative links from this page so b
 
 ## What it is
 
-Metaprompt is a Kubernetes control plane for swappable CLI coding harnesses (OpenCode, Claude Code, Codex, Cursor, session, stub). The control surface is **MCP**, not kubectl-first.
+Metaprompt is a Kubernetes control plane for swappable CLI coding harnesses (OpenCode, Claude Code, Codex, Cursor, session, stub, AgentCore). The control surface is **MCP**, not kubectl-first.
 
 - Source: `https://github.com/e-jerk/metaprompt`
 - Images: `ghcr.io/e-jerk/metaprompt/<name>`
@@ -115,6 +115,33 @@ bash scripts/session-up.sh
 
 Inside the pod: `/workspace/.mp/attach` (or `opencode` / `cursor` / `claude` / `codex` / `shell`).
 
+### Prompt patterns (swarms and adversaries)
+
+You prompt the **parent**, not a Metaprompt chat API. The parent calls `job.spawn`. Full examples: [how-it-works.md](how-it-works.md#how-to-use-it) (landing page: [index.html#use](index.html#use)).
+
+Human prompt to the parent (session or `run.create`):
+
+```
+Ship a login rate limiter. job.spawn a swarm: implementer, adversary (bypass only, do not help impl), tester.
+Each coord.artifact.put (impl / adv / test). job.progress then job.wait. Then spawn judge after those three; keep only what survives the adversary.
+No Task/Agent/subagent tools. jj only.
+```
+
+`job.spawn` (from the parent run token). Local k3s: use `opencode` for every role. Mixed harnesses need Bedrock / Codex / AgentCore on the cluster.
+
+```json
+{
+  "agents": [
+    { "id": "impl", "harness": "opencode", "prompt": "Implementer. Rate-limit /login. coord.artifact.put name=impl. Do not read the adversary." },
+    { "id": "adv", "harness": "opencode", "prompt": "Adversary. Find bypasses only. coord.artifact.put name=adv. Do not implement the feature." },
+    { "id": "test", "harness": "opencode", "prompt": "Tester. Tests that catch bypasses. coord.artifact.put name=test. Do not soften failures." },
+    { "id": "judge", "harness": "opencode", "after": ["impl", "adv", "test"], "prompt": "Judge. coord.artifact.get impl, adv, test. Keep what survives. coord.artifact.put name=verdict." }
+  ]
+}
+```
+
+Independent work: no `after` (parallel Jobs). Dependent work: `after: [id]`. Same party; share via `coord.artifact.*`. Tail with `job.progress`, not log dumps. `run.get` `{ "summaryTree": true }`.
+
 ### Harnesses and default models
 
 | Harness | Default model | Notes |
@@ -124,9 +151,10 @@ Inside the pod: `/workspace/.mp/attach` (or `opencode` / `cursor` / `claude` / `
 | `claude-code` | `bedrock-sonnet` | Requires Bedrock when that model is requested. |
 | `codex` | `gpt-5` | Needs OpenAI credentials. |
 | `cursor` | `auto` | Also `composer-2.5`. |
+| `agentcore` | `agentcore` | Amazon Bedrock AgentCore Harness or Runtime. Job-only. Needs `agentcore.enabled` plus `harnessArn` or `runtimeArn`. Optional Gateway MCP `agentcore-gateway`. |
 | `stub` | `none` | Jobs/smoke only. Rejected for sessions. |
 
-Local k3s ships `bedrock.enabled: false`. Do not `run.create` with `claude-code` + `bedrock-sonnet` there (409). Use `opencode` + a free Zen model, or `session` / `stub`.
+Local k3s ships `bedrock.enabled: false` and `agentcore.enabled: false`. Do not `run.create` with `claude-code` + `bedrock-sonnet` or `harness: "agentcore"` there (409). Use `opencode` + a free Zen model, or `session` / `stub`. `session.create` rejects `agentcore` — AgentCore sessions live in AWS, not `kubectl exec`.
 
 ### Catalog tools (do not invent names)
 
@@ -166,7 +194,7 @@ If the user asked you to change Metaprompt itself (not only install it):
 | `packages/shared` | Types, ACL, catalog, prefix hash, spawn DAG, rollup |
 | `packages/mcp` | Control-plane MCP + in-process plane |
 | `packages/runner` | Job runner, prefix files, child MCP, harness spawn |
-| `adapters/*` | Images (`mcp`, `runner`, `stub`, `session`, `opencode`, `claude-code`, `codex`, `cursor`) |
+| `adapters/*` | Images (`mcp`, `runner`, `stub`, `session`, `opencode`, `claude-code`, `codex`, `cursor`). `agentcore` uses the runner image. |
 | `deploy/chart` | Helm (`values-k3s.yaml`, `values-eks.yaml`, `values-gke.yaml`) |
 | `skills/` | Install/build playbooks (synced onto this site) |
 | `site/` | This GitHub Pages tree |
