@@ -12,6 +12,7 @@ A **parent** is whoever called `run.create`. Every child is a **Kubernetes Job**
 | `packages/mcp` | Control-plane MCP + in-process plane |
 | `packages/runner` | Job runner, prefix files, stub harness |
 | `adapters/*` | Images (mcp, runner, stub, opencode, claude-code, codex, cursor, session). `agentcore` reuses the runner image (SigV4 bridge into AgentCore). |
+| `cli/metaprompt` | Bash CLI (`Formula/metaprompt.rb`) |
 | `deploy/chart` | Generic Helm chart (`values-k3s.yaml`, `values-eks.yaml`, `values-gke.yaml`) |
 | `skills/` | Harness-native install/build playbooks |
 | `site/` | GitHub Pages + CNAME `metaprom.pt`. Landing: how it works. Agents: `implement.md` |
@@ -31,6 +32,21 @@ git push -u origin main
 
 Point **metaprom.pt** at GitHub Pages once `.github/workflows/pages.yml` has published `site/` (CNAME is already `metaprom.pt`). The site ships `.nojekyll` so agents receive raw markdown.
 
+## CLI (Homebrew)
+
+```bash
+brew tap e-jerk/metaprompt https://github.com/e-jerk/metaprompt
+brew install --HEAD metaprompt
+# needs Docker or Apple container; cluster commands run in ghcr.io/e-jerk/metaprompt/cli
+metaprompt up              # install a local cluster + Helm release
+# or BYO kubecontext:
+# metaprompt install eks
+metaprompt smoke
+metaprompt forward
+```
+
+The formula is `Formula/metaprompt.rb`. From a checkout: `./cli/metaprompt`. `METAPROMPT_NATIVE=1` uses host helm/kubectl.
+
 ## Local
 
 ```bash
@@ -41,9 +57,9 @@ bun test
 Cluster (Apple Silicon: Apple `container k8s`; elsewhere: k3d):
 
 ```bash
-make k3s-up
-make cluster-smoke
-kubectl -n metaprompt port-forward svc/metaprompt-mcp 3333:3333
+metaprompt up          # or: make k3s-up
+metaprompt smoke
+metaprompt forward
 ```
 
 Then `Authorization: Bearer alice-token` against `http://127.0.0.1:3333/mcp`.

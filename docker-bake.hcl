@@ -13,16 +13,22 @@ variable "PLATFORMS" {
 }
 
 group "default" {
-  targets = ["mcp", "runner", "stub", "session", "opencode", "claude-code", "codex", "cursor"]
+  targets = ["mcp", "runner", "stub", "session", "opencode", "claude-code", "codex", "cursor", "cli"]
 }
 
 group "core" {
-  targets = ["mcp", "runner", "stub", "session"]
+  targets = ["mcp", "runner", "stub", "session", "cli"]
 }
 
 target "_common" {
   context   = "."
   platforms = PLATFORMS
+}
+
+target "cli" {
+  inherits   = ["_common"]
+  dockerfile = "adapters/cli/Dockerfile"
+  tags       = [for t in TAGS : "${REGISTRY}/cli:${t}"]
 }
 
 target "mcp" {

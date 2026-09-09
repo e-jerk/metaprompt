@@ -19,10 +19,19 @@ On macOS 26+ Apple Silicon, the cluster runs **on Apple `container k8s`** (kinde
 
 ### Commands
 
-From the repo root:
+Homebrew CLI (cluster commands run in `ghcr.io/e-jerk/metaprompt/cli` via Docker or Apple `container`). `up` still creates a real Kubernetes cluster.
 
 ```bash
-bash scripts/k3s-up.sh
+brew tap e-jerk/metaprompt https://github.com/e-jerk/metaprompt
+brew install --HEAD metaprompt
+metaprompt up
+```
+
+From the repo root (`./cli/metaprompt` is the same CLI):
+
+```bash
+metaprompt up
+# or: bash scripts/k3s-up.sh
 ```
 
 This starts the Apple container system if needed, creates `container k8s create --name metaprompt` if needed (kube context `metaprompt`), and runs:
@@ -34,8 +43,8 @@ bash scripts/bootstrap.sh --values deploy/chart/values-k3s.yaml
 Reset:
 
 ```bash
-bash scripts/k3s-down.sh
-bash scripts/k3s-up.sh
+metaprompt down
+metaprompt up
 ```
 
 `k3s-down` leaves `container system` running. Stop it with `container system stop` if you want the VMs fully off.
@@ -45,7 +54,7 @@ bash scripts/k3s-up.sh
 When Apple `container` is not available, the same script uses k3d (Docker Desktop or Colima):
 
 ```bash
-METAPROMPT_CLUSTER_BACKEND=k3d bash scripts/k3s-up.sh
+METAPROMPT_CLUSTER_BACKEND=k3d metaprompt up
 ```
 
 Prerequisites for that path: a Docker engine, `kubectl`, `helm`. `k3d` and Colima are installed automatically if missing.
@@ -73,7 +82,7 @@ Stop on the first red. Run from the repo root.
 0. **Preflight** — `bun test` (or `make test`). Cluster Ready. Port-forward `svc/metaprompt-mcp 3333:3333` and `GET /healthz`. Tokens: `local-dev-token` (admin), `alice-token`, `bob-token`.
 1. **In-process** — slice tests plus `packages/mcp/src/memory.test.ts` (ACL, search rank, delete, empty/oversize). No cluster.
 2. **HTTP plane** — `packages/mcp/src/server.test.ts` against an in-process listener; live catalog/auth/party/cron/mint/memory also run in `scripts/cluster-smoke.sh` via the port-forward.
-3. **Live Jobs** — `bash scripts/cluster-smoke.sh` (or `make cluster-smoke`): tmpfs Job + logs, PVC create/delete, bob denied until `run.share`, kill unblocks `run.wait`, `spawn:a,b` rollup, memory put/search across user/party/repo, identical stubs share `prefixHash`.
+3. **Live Jobs** — `metaprompt smoke` (or `make cluster-smoke`): tmpfs Job + logs, PVC create/delete, bob denied until `run.share`, kill unblocks `run.wait`, `spawn:a,b` rollup, memory put/search across user/party/repo, identical stubs share `prefixHash`.
 
 Stub prompt verbs for Job-only plane calls: `exit:…`, `spawn:a,b`, `memory:…`, `sleep:N`.
 
@@ -82,7 +91,7 @@ Out of scope locally: vendor harnesses, Bedrock, OIDC, git-sync SHA rotation, Cl
 ## Attach a parent harness
 
 ```bash
-kubectl -n metaprompt port-forward svc/metaprompt-mcp 3333:3333
+metaprompt forward
 ```
 
 MCP URL: `http://127.0.0.1:3333/mcp`
@@ -100,9 +109,9 @@ Call `harness.list` then `session.create` with `{ "repo": "app" }` (default harn
 `session.create` starts a long-running Pod (not a one-shot Job) with plane MCP, party, jj, model, and skills already written into `/workspace`. Children still launch as Kubernetes Jobs via `job.spawn`.
 
 ```bash
-kubectl -n metaprompt port-forward svc/metaprompt-mcp 3333:3333
-bash scripts/session-up.sh               # session image (OpenCode/Cursor/Claude/Codex)
-# or: bash scripts/session-up.sh opencode | cursor | claude-code | codex
+metaprompt forward
+metaprompt session               # session image (OpenCode/Cursor/Claude/Codex)
+# or: metaprompt session opencode | cursor | claude-code | codex
 # prints: kubectl --context metaprompt -n metaprompt exec -it mp-run_… -c harness -- /workspace/.mp/attach
 ```
 

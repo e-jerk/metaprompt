@@ -244,8 +244,8 @@ Then summarize from run.get summaryTree.
     </tbody>
   </table>
   <p>Interactive root:</p>
-<pre><code>kubectl -n metaprompt port-forward svc/metaprompt-mcp 3333:3333
-bash scripts/session-up.sh          # or: session-up.sh opencode|cursor|claude-code|codex
+<pre><code>metaprompt forward
+metaprompt session          # or: metaprompt session opencode|cursor|claude-code|codex
 # kubectl --context metaprompt -n metaprompt exec -it mp-run-… -c harness -- /workspace/.mp/attach
 </code></pre>
   <p>Inside the pod: <code>/workspace/.mp/attach</code>, or <code>opencode</code> / <code>cursor</code> / <code>claude</code> / <code>codex</code> / <code>shell</code>.</p>
@@ -324,12 +324,12 @@ bash scripts/session-up.sh          # or: session-up.sh opencode|cursor|claude-c
 
   <h2 id="install">Install</h2>
   <p>Pick a playbook from <a href="setup.md">setup.md</a>. Clanker Cloud is optional — local Apple <code>container k8s</code>, k3d, existing EKS, and existing GKE do not need it.</p>
-<pre><code>git clone https://github.com/e-jerk/metaprompt.git
-cd metaprompt
-bun install &amp;&amp; bun test
-make k3s-up
-make cluster-smoke
-kubectl --context metaprompt -n metaprompt port-forward svc/metaprompt-mcp 3333:3333
+<pre><code>brew tap e-jerk/metaprompt https://github.com/e-jerk/metaprompt
+brew install --HEAD metaprompt
+metaprompt up                 # install a local Kubernetes cluster + Helm
+# metaprompt install eks      # BYO cluster
+metaprompt smoke
+metaprompt forward
 </code></pre>
   <p>Images: Apple Silicon <code>container build</code> + <code>container k8s load-image</code>; CI <code>docker buildx bake</code>. See <a href="setup/build.md">setup/build.md</a>.</p>
   <p>Repo layout: <code>packages/shared</code> (types, ACL, catalog, prefix, spawn, rollup), <code>packages/mcp</code> (plane), <code>packages/runner</code> (pod), <code>adapters/*</code> (images), <code>deploy/chart</code> (Helm), <code>skills/</code> (playbooks synced onto this site).</p>

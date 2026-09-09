@@ -22,7 +22,7 @@ curl -sS http://127.0.0.1:3333/mcp \
   -H 'Authorization: Bearer alice-token' \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"session.create","arguments":{"repo":"app"}}}'
-# attach: bash scripts/session-up.sh
+# attach: metaprompt session
 ```
 
 Or a one-shot root Job: `run.create` `{ "harness": "opencode", "repo": "app", "prompt": "…" }`. Children still spawn from inside that Job (it has a run token). You cannot call `job.spawn` with only `alice-token`.
@@ -241,12 +241,12 @@ Max depth 4, running per user 16, parallel per parent 8, attempts 8, suspend TTL
 [setup.md](setup.md). Clanker is optional.
 
 ```bash
-git clone https://github.com/e-jerk/metaprompt.git
-cd metaprompt
-bun install && bun test
-make k3s-up
-make cluster-smoke
-kubectl --context metaprompt -n metaprompt port-forward svc/metaprompt-mcp 3333:3333
+brew tap e-jerk/metaprompt https://github.com/e-jerk/metaprompt
+brew install --HEAD metaprompt
+metaprompt up                 # install a local Kubernetes cluster + Helm
+# metaprompt install eks      # BYO cluster
+metaprompt smoke
+metaprompt forward
 ```
 
 ## What it is not

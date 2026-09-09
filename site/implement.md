@@ -69,9 +69,14 @@ Images and Helm values are in that checkout. Do not reimplement the plane in a n
 Follow [setup.md](setup.md). Typical local path:
 
 ```bash
-make k3s-up
-make cluster-smoke
-kubectl --context metaprompt -n metaprompt port-forward svc/metaprompt-mcp 3333:3333
+brew tap e-jerk/metaprompt https://github.com/e-jerk/metaprompt
+brew install --HEAD metaprompt
+# Docker or Apple container required. Cluster commands run in ghcr.io/e-jerk/metaprompt/cli.
+metaprompt up                 # install a local cluster + Helm
+# metaprompt install eks      # BYO kubecontext
+metaprompt smoke
+metaprompt forward
+# checkout: ./cli/metaprompt  (same commands)
 ```
 
 Ready: `GET http://127.0.0.1:3333/healthz` → `{"ok":true}`.
@@ -92,6 +97,8 @@ MCP URL: `http://127.0.0.1:3333/mcp` (after port-forward). JSON-RPC `tools/call`
 
 ```bash
 # example: list harnesses as alice (k3s)
+metaprompt call harness.list
+# or curl:
 curl -sS http://127.0.0.1:3333/mcp \
   -H 'Authorization: Bearer alice-token' \
   -H 'Content-Type: application/json' \
@@ -109,7 +116,7 @@ curl -sS http://127.0.0.1:3333/mcp \
 `session.create` default image is `session` (OpenCode, Claude Code, Codex, Cursor bundled). Attach:
 
 ```bash
-bash scripts/session-up.sh
+metaprompt session
 # prints: kubectl --context metaprompt -n metaprompt exec -it mp-run-… -c harness -- /workspace/.mp/attach
 ```
 

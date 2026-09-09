@@ -289,7 +289,21 @@ up_k3d() {
     echo "Cluster ${CLUSTER} already exists"
   else
     echo "Creating k3d cluster ${CLUSTER}…"
-    k3d cluster create "${CLUSTER}" --agents 1 --wait
+    local create=(k3d cluster create "${CLUSTER}" --agents 1 --wait)
+    if [[ -n "${METAPROMPT_IN_IMAGE:-}" ]]; then
+      create+=(--k3s-arg "--tls-san=k3d-${CLUSTER}-serverlb@server:0")
+    fi
+    "${create[@]}"
+  fi
+  if [[ -n "${METAPROMPT_IN_IMAGE:-}" ]]; then
+    docker network connect "k3d-${CLUSTER}" "$(hostname)" 2>/dev/null || true
+    local kube="${KUBECONFIG:-${HOME}/.kube/config}"
+    if [[ -f "${kube}" ]]; then
+      local fixed
+      fixed="$(mktemp)"
+      sed -E "s#https://(127\\.0\\.0\\.1|localhost|0\\.0\\.0\\.0):[0-9]+#https://k3d-${CLUSTER}-serverlb:6443#g" "${kube}" > "${fixed}"
+      export KUBECONFIG="${fixed}"
+    fi
   fi
   if [[ "${IMAGES_SOURCE}" == "local" ]]; then
     build_images_docker
@@ -306,6 +320,9 @@ up_k3d() {
 }
 
 BACKEND="$(resolve_backend)"
+if [[ -n "${METAPROMPT_IN_IMAGE:-}" && "${METAPROMPT_CLUSTER_BACKEND:-auto}" == "auto" ]]; then
+  BACKEND=k3d
+fi
 echo "Cluster backend: ${BACKEND}"
 if [[ "${METAPROMPT_BUILD_IMAGES:-}" == "1" ]]; then
   IMAGES_SOURCE=local
@@ -323,6 +340,11 @@ case "${BACKEND}" in
   *) up_k3d ;;
 esac
 
+if [[ "${METAPROMPT_SKIP_BOOTSTRAP:-}" == "1" ]]; then
+  echo "Cluster ${CLUSTER} is ready (backend=${BACKEND}; helm skipped)."
+  exit 0
+fi
+
 "${ROOT}/scripts/bootstrap.sh" --values "${ROOT}/deploy/chart/values-k3s.yaml"
 echo "k3s cluster ${CLUSTER} is ready (backend=${BACKEND})."
-echo "Smoke: bash scripts/cluster-smoke.sh"
+echo "Smoke: metaprompt smoke"

@@ -6,6 +6,19 @@ For invariants, MCP tools, and how to use the plane after install, fetch [implem
 
 **Clanker Cloud is optional.** Local k3s, existing EKS, and existing GKE work with no Clanker CLI, app, or subscription.
 
+Install the bash CLI with Homebrew. Cluster commands (`up`, `install`, `smoke`, …) run inside `ghcr.io/e-jerk/metaprompt/cli` via `docker run` or Apple `container run`. You still need a Kubernetes cluster: `up` installs one, or point kubectl at a BYO cluster and `install`.
+
+```bash
+brew tap e-jerk/metaprompt https://github.com/e-jerk/metaprompt
+brew install --HEAD metaprompt
+metaprompt up              # local cluster (k3d, or Apple container k8s) + Helm
+# metaprompt install eks   # BYO kubecontext + values-eks.yaml
+metaprompt smoke
+metaprompt forward
+```
+
+From a git checkout: `./cli/metaprompt`. Formula: [`Formula/metaprompt.rb`](https://github.com/e-jerk/metaprompt/blob/main/Formula/metaprompt.rb).
+
 1. Detect the target:
    - Apple Silicon (macOS 26+) → **Apple `container k8s`**. Fetch and follow [setup/k3s.md](setup/k3s.md).
    - Other local laptops → same playbook; it falls back to k3d.

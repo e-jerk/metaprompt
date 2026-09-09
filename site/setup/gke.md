@@ -7,7 +7,10 @@ The Helm chart is generic Kubernetes. Overlay: `deploy/chart/values-gke.yaml` (W
 - Existing GKE kubecontext:
 
 ```bash
-./scripts/bootstrap.sh --values deploy/chart/values-gke.yaml
+# BYO GKE kubecontext. CLI helm/kubectl run in ghcr.io/e-jerk/metaprompt/cli.
+metaprompt install gke
+# or: metaprompt install --values ./values-gke.yaml
+# checkout: ./scripts/bootstrap.sh --values deploy/chart/values-gke.yaml
 ```
 
 Fill `serviceAccount.annotations` with `iam.gke.io/gcp-service-account` when you have a GCP service account. Do not add GCP-specific APIs to the templates.

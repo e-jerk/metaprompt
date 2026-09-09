@@ -1,0 +1,646 @@
+#!/usr/bin/env bash
+# Metaprompt cluster + plane CLI. Homebrew installs this plus deploy/ and scripts/.
+set -euo pipefail
+
+METAPROMPT_VERSION="0.1.0"
+# Homebrew inreplace sets this to pkgshare. Empty means discover a checkout or brew prefix.
+METAPROMPT_SHARE_DEFAULT=""
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:${PATH}"
+
+die() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: metaprompt <command> [args]
+
+Install (Homebrew):
+  brew tap e-jerk/metaprompt https://github.com/e-jerk/metaprompt
+  brew install --HEAD metaprompt
+
+Cluster commands run in ghcr.io/e-jerk/metaprompt/cli via docker run or
+Apple container run. You still need a Kubernetes cluster: `up` installs
+one (k3d, or Apple container k8s), or `install` uses a BYO kubecontext.
+
+Cluster
+  up                         Install/reuse a local cluster and helm-install
+  down                       Delete the local cluster
+  install [k3s|eks|gke]      Helm upgrade --install into the current kubecontext (BYO)
+  install --values FILE
+  status                     Deployments, Helm release, and /healthz
+  smoke                      Live cluster smoke (HTTP plane + Jobs)
+  forward                    Port-forward svc/metaprompt-mcp (foreground)
+
+Plane (needs forward, or METAPROMPT_URL)
+  health                     GET /healthz
+  tools                      tools/list (names)
+  call <tool> [json]         tools/call
+  call --dry-run <tool> [json]
+  session [harness]          session.create and print kubectl attach
+  run create --harness NAME [--repo app] [--prompt TEXT] [--storage tmpfs|pvc] [--model NAME]
+  run get|logs|wait|kill|result <runId>
+  run list
+
+Env
+  METAPROMPT_HOME            Checkout or brew share (deploy/ + scripts/)
+  METAPROMPT_TOKEN           Plane bearer (default alice-token; never printed)
+  METAPROMPT_URL             Plane base or .../mcp (default http://127.0.0.1:3333)
+  METAPROMPT_NAMESPACE       Kubernetes namespace (default metaprompt)
+  METAPROMPT_CONTEXT         kubecontext (optional)
+  METAPROMPT_LOCAL_PORT      Port-forward local port (default 3333)
+  METAPROMPT_ENGINE          auto | docker | container | native
+  METAPROMPT_CLI_IMAGE       CLI image (default ghcr.io/e-jerk/metaprompt/cli:latest)
+  METAPROMPT_NATIVE=1        Use host helm/kubectl instead of the CLI image
+  METAPROMPT_KUBE_HOST       Rewrite kubeconfig 127.0.0.1 to this host (in-image)
+
+Local image rebuilds need a git checkout (METAPROMPT_BUILD_IMAGES=1).
+EOF
+}
+
+share_root() {
+  if [[ -n "${METAPROMPT_HOME:-}" ]]; then
+    if [[ -d "${METAPROMPT_HOME}/deploy/chart" ]]; then
+      printf '%s\n' "${METAPROMPT_HOME}"
+      return 0
+    fi
+    return 1
+  fi
+  if [[ -n "${METAPROMPT_SHARE_DEFAULT}" && -d "${METAPROMPT_SHARE_DEFAULT}/deploy/chart" ]]; then
+    printf '%s\n' "${METAPROMPT_SHARE_DEFAULT}"
+    return 0
+  fi
+  local here
+  here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [[ -d "${here}/../deploy/chart" ]]; then
+    (cd "${here}/.." && pwd)
+    return 0
+  fi
+  local prefix
+  for prefix in "${HOMEBREW_PREFIX:-}" /opt/homebrew /usr/local; do
+    [[ -n "${prefix}" ]] || continue
+    if [[ -d "${prefix}/opt/metaprompt/share/metaprompt/deploy/chart" ]]; then
+      printf '%s\n' "${prefix}/opt/metaprompt/share/metaprompt"
+      return 0
+    fi
+  done
+  return 1
+}
+
+require_share() {
+  local root
+  if root="$(share_root)"; then
+    printf '%s\n' "${root}"
+    return 0
+  fi
+  die "Metaprompt chart/scripts not found. Install with: brew tap e-jerk/metaprompt https://github.com/e-jerk/metaprompt && brew install --HEAD metaprompt
+Or set METAPROMPT_HOME to a git checkout."
+}
+
+run_script() {
+  local root name
+  root="$(require_share)"
+  name="$1"
+  shift
+  exec bash "${root}/scripts/${name}" "$@"
+}
+
+need() {
+  command -v "$1" >/dev/null || die "missing ${1}"
+}
+
+plane_base() {
+  local url="${METAPROMPT_URL:-${MCP_URL:-}}"
+  if [[ -n "${url}" ]]; then
+    url="${url%/}"
+    printf '%s\n' "${url%/mcp}"
+    return 0
+  fi
+  printf 'http://127.0.0.1:%s\n' "${METAPROMPT_LOCAL_PORT:-3333}"
+}
+
+kube() {
+  prepare_kube
+  local args=()
+  if [[ -n "${METAPROMPT_CONTEXT:-}" ]]; then
+    args+=(--context "${METAPROMPT_CONTEXT}")
+  fi
+  kubectl "${args[@]}" -n "${METAPROMPT_NAMESPACE:-metaprompt}" "$@"
+}
+
+cli_image() {
+  printf '%s\n' "${METAPROMPT_CLI_IMAGE:-ghcr.io/e-jerk/metaprompt/cli:latest}"
+}
+
+detect_engine() {
+  case "${METAPROMPT_ENGINE:-auto}" in
+    docker | container | native) printf '%s\n' "${METAPROMPT_ENGINE}" ;;
+    auto)
+      if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]] && command -v container >/dev/null; then
+        printf '%s\n' container
+      elif command -v docker >/dev/null; then
+        printf '%s\n' docker
+      elif command -v container >/dev/null; then
+        printf '%s\n' container
+      else
+        printf '%s\n' native
+      fi
+      ;;
+    *)
+      die "METAPROMPT_ENGINE must be auto, docker, container, or native"
+      ;;
+  esac
+}
+
+is_cluster_cmd() {
+  case "${1:-}" in
+    up | down | install | status | smoke | forward | port-forward | session) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# In the CLI image, kubeconfigs from the host often point at 127.0.0.1.
+prepare_kube() {
+  [[ -n "${METAPROMPT_IN_IMAGE:-}" ]] || return 0
+  local src="${KUBECONFIG:-${HOME}/.kube/config}"
+  [[ -f "${src}" ]] || return 0
+  local host="${METAPROMPT_KUBE_HOST:-}"
+  if [[ -z "${host}" && -f /.dockerenv ]]; then
+    host="host.docker.internal"
+  fi
+  [[ -n "${host}" ]] || return 0
+  local tmp
+  tmp="$(mktemp)"
+  sed -E "s#(server: https://)(127\\.0\\.0\\.1|localhost|0\\.0\\.0\\.0)#\\1${host}#g" "${src}" > "${tmp}"
+  export KUBECONFIG="${tmp}"
+}
+
+append_passthrough_env() {
+  local e
+  for e in METAPROMPT_TOKEN MCP_TOKEN METAPROMPT_URL MCP_URL METAPROMPT_NAMESPACE \
+    METAPROMPT_CONTEXT METAPROMPT_LOCAL_PORT METAPROMPT_CLUSTER METAPROMPT_CLUSTER_BACKEND \
+    METAPROMPT_BUILD_IMAGES METAPROMPT_REGISTRY METAPROMPT_KUBE_HOST KUBECONFIG; do
+    if [[ -n "${!e:-}" ]]; then
+      RUNTIME_ARGS+=(-e "${e}=${!e}")
+    fi
+  done
+}
+
+# Sets RUNTIME_ARGS and RUNTIME_CMD (host --values files are mounted).
+build_runtime() {
+  RUNTIME_ARGS=(run --rm)
+  RUNTIME_CMD=()
+  if [[ -t 0 && -t 1 ]]; then
+    RUNTIME_ARGS+=(-it)
+  else
+    RUNTIME_ARGS+=(-i)
+  fi
+  RUNTIME_ARGS+=(-e METAPROMPT_IN_IMAGE=1)
+  RUNTIME_ARGS+=(-e METAPROMPT_HOME=/opt/metaprompt)
+  append_passthrough_env
+  mkdir -p "${HOME}/.kube"
+  RUNTIME_ARGS+=(-v "${HOME}/.kube:/root/.kube")
+  local prev="" a abs
+  for a in "$@"; do
+    if [[ "${prev}" == "--values" ]]; then
+      abs="$(cd "$(dirname "$a")" && pwd)/$(basename "$a")"
+      [[ -f "${abs}" ]] || die "values file not found: $a"
+      RUNTIME_ARGS+=(-v "${abs}:/values/user.yaml:ro")
+      RUNTIME_CMD+=(--values /values/user.yaml)
+      prev=""
+      continue
+    fi
+    if [[ "${a}" == "--values" ]]; then
+      prev="${a}"
+      continue
+    fi
+    if [[ "${a}" == "--dry-run" ]]; then
+      continue
+    fi
+    RUNTIME_CMD+=("${a}")
+  done
+  [[ -z "${prev}" ]] || die "install --values needs a file"
+}
+
+exec_runtime() {
+  local engine="$1"
+  shift
+  build_runtime "$@"
+  local image port
+  image="$(cli_image)"
+  port="${METAPROMPT_LOCAL_PORT:-3333}"
+  if [[ "${engine}" == "docker" ]]; then
+    RUNTIME_ARGS+=(-v /var/run/docker.sock:/var/run/docker.sock)
+    RUNTIME_ARGS+=(--add-host host.docker.internal:host-gateway)
+    RUNTIME_ARGS+=(-e METAPROMPT_KUBE_HOST=host.docker.internal)
+    if [[ "${RUNTIME_CMD[0]:-}" == "forward" || "${RUNTIME_CMD[0]:-}" == "port-forward" ]]; then
+      RUNTIME_ARGS+=(-p "${port}:${port}")
+    fi
+    if [[ "${DRY_RUNTIME:-0}" == "1" ]]; then
+      printf 'docker'
+      local x
+      for x in "${RUNTIME_ARGS[@]}" "${image}" "${RUNTIME_CMD[@]}"; do
+        printf ' %q' "${x}"
+      done
+      printf '\n'
+      return 0
+    fi
+    exec docker "${RUNTIME_ARGS[@]}" "${image}" "${RUNTIME_CMD[@]}"
+  fi
+  if [[ "${RUNTIME_CMD[0]:-}" == "forward" || "${RUNTIME_CMD[0]:-}" == "port-forward" ]]; then
+    RUNTIME_ARGS+=(-p "${port}:${port}")
+  fi
+  RUNTIME_ARGS+=(-e "METAPROMPT_KUBE_HOST=${METAPROMPT_KUBE_HOST:-host.docker.internal}")
+  if [[ "${DRY_RUNTIME:-0}" == "1" ]]; then
+    printf 'container'
+    local x
+    for x in "${RUNTIME_ARGS[@]}" "${image}" "${RUNTIME_CMD[@]}"; do
+      printf ' %q' "${x}"
+    done
+    printf '\n'
+    return 0
+  fi
+  exec container "${RUNTIME_ARGS[@]}" "${image}" "${RUNTIME_CMD[@]}"
+}
+
+apple_up_host() {
+  local root
+  root="$(require_share)"
+  if [[ "${DRY_RUNTIME:-0}" == "1" ]]; then
+    echo "container k8s create --name ${METAPROMPT_CLUSTER:-metaprompt}"
+    exec_runtime container install k3s
+    return 0
+  fi
+  METAPROMPT_SKIP_BOOTSTRAP=1 bash "${root}/scripts/k3s-up.sh"
+  exec_runtime container install k3s
+}
+
+wrap_cluster() {
+  [[ -z "${METAPROMPT_IN_IMAGE:-}" ]] || return 0
+  [[ -z "${METAPROMPT_NATIVE:-}" ]] || return 0
+  is_cluster_cmd "${1:-}" || return 0
+  local a
+  for a in "$@"; do
+    if [[ "${a}" == "--dry-run" ]]; then
+      if [[ "${1}" == "session" ]]; then
+        return 0
+      fi
+      DRY_RUNTIME=1
+    fi
+  done
+  local engine
+  engine="$(detect_engine)"
+  if [[ "${engine}" == "native" ]]; then
+    die "metaprompt ${1} runs in a container. Install Docker or Apple container, or set METAPROMPT_NATIVE=1 to use host helm/kubectl."
+  fi
+  if [[ "${1}" == "up" && "${engine}" == "container" ]]; then
+    apple_up_host "$@"
+    exit 0
+  fi
+  if [[ "${1}" == "down" && "${engine}" == "container" ]]; then
+    if [[ "${DRY_RUNTIME:-0}" == "1" ]]; then
+      echo "container k8s delete --name ${METAPROMPT_CLUSTER:-metaprompt}"
+      exit 0
+    fi
+    run_script k3s-down.sh
+    exit 0
+  fi
+  exec_runtime "${engine}" "$@"
+  exit 0
+}
+
+# JSON-RPC against the plane. Token is read from the environment, never printed.
+mcp_rpc() {
+  local method="$1"
+  local params="$2"
+  local dry="${3:-0}"
+  need python3
+  METAPROMPT_RPC_METHOD="${method}" \
+  METAPROMPT_RPC_PARAMS="${params}" \
+  METAPROMPT_RPC_DRY="${dry}" \
+  METAPROMPT_RPC_URL="$(plane_base)/mcp" \
+  python3 - <<'PY'
+import json, os, sys, urllib.error, urllib.request
+
+method = os.environ["METAPROMPT_RPC_METHOD"]
+params = json.loads(os.environ["METAPROMPT_RPC_PARAMS"])
+dry = os.environ.get("METAPROMPT_RPC_DRY") == "1"
+url = os.environ["METAPROMPT_RPC_URL"]
+token = os.environ.get("METAPROMPT_TOKEN") or os.environ.get("MCP_TOKEN") or "alice-token"
+body = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+if dry:
+    json.dump(body, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    raise SystemExit(0)
+req = urllib.request.Request(
+    url,
+    data=json.dumps(body).encode(),
+    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+    method="POST",
+)
+try:
+    with urllib.request.urlopen(req) as r:
+        out = json.load(r)
+        status = r.status
+except urllib.error.HTTPError as e:
+    raw = e.read().decode()
+    try:
+        out = json.loads(raw)
+    except json.JSONDecodeError:
+        print(raw, file=sys.stderr)
+        raise SystemExit(e.code)
+    status = e.code
+if "error" in out:
+    err = out["error"]
+    msg = err.get("message", err) if isinstance(err, dict) else err
+    print(f"{method} failed ({status}): {msg}", file=sys.stderr)
+    raise SystemExit(1)
+result = out.get("result")
+if isinstance(result, dict) and "content" in result:
+    texts = []
+    for item in result.get("content") or []:
+        if isinstance(item, dict) and item.get("text") is not None:
+            texts.append(item["text"])
+    blob = "\n".join(texts) if texts else json.dumps(result)
+    try:
+        json.dump(json.loads(blob), sys.stdout, indent=2)
+        sys.stdout.write("\n")
+    except json.JSONDecodeError:
+        sys.stdout.write(blob if blob.endswith("\n") else blob + "\n")
+    raise SystemExit(0)
+json.dump(result, sys.stdout, indent=2)
+sys.stdout.write("\n")
+PY
+}
+
+json_object() {
+  python3 -c 'import json,sys; print(json.dumps(json.loads(sys.argv[1])))' "$1"
+}
+
+cmd_version() {
+  local root engine
+  printf 'metaprompt %s\n' "${METAPROMPT_VERSION}"
+  if root="$(share_root)"; then
+    printf 'share %s\n' "${root}"
+  fi
+  if [[ -n "${METAPROMPT_IN_IMAGE:-}" ]]; then
+    printf 'runtime image\n'
+  else
+    engine="$(detect_engine)"
+    printf 'runtime %s\n' "${engine}"
+    if [[ "${engine}" != "native" ]]; then
+      printf 'cli-image %s\n' "$(cli_image)"
+    fi
+  fi
+}
+
+cmd_up() {
+  run_script k3s-up.sh
+}
+
+cmd_down() {
+  run_script k3s-down.sh
+}
+
+cmd_install() {
+  local root values=""
+  prepare_kube
+  root="$(require_share)"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --values)
+        values="${2:-}"
+        [[ -n "${values}" ]] || die "install --values needs a file"
+        shift 2
+        ;;
+      k3s | eks | gke)
+        values="${root}/deploy/chart/values-${1}.yaml"
+        shift
+        ;;
+      -h | --help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "usage: metaprompt install [--values FILE] [k3s|eks|gke]"
+        ;;
+    esac
+  done
+  values="${values:-${root}/deploy/chart/values-k3s.yaml}"
+  exec bash "${root}/scripts/bootstrap.sh" --values "${values}"
+}
+
+cmd_status() {
+  need kubectl
+  need helm
+  prepare_kube
+  kube get deploy,sts,svc
+  local helm_args=(status metaprompt -n "${METAPROMPT_NAMESPACE:-metaprompt}")
+  if [[ -n "${METAPROMPT_CONTEXT:-}" ]]; then
+    helm_args+=(--kube-context "${METAPROMPT_CONTEXT}")
+  fi
+  helm "${helm_args[@]}"
+  if curl -sf "$(plane_base)/healthz" >/dev/null; then
+    echo "healthz ok"
+  else
+    echo "healthz not reachable at $(plane_base)/healthz — run: metaprompt forward"
+  fi
+}
+
+cmd_smoke() {
+  prepare_kube
+  run_script cluster-smoke.sh
+}
+
+cmd_forward() {
+  need kubectl
+  local port="${METAPROMPT_LOCAL_PORT:-3333}"
+  echo "MCP $(plane_base)/mcp  healthz $(plane_base)/healthz" >&2
+  kube port-forward svc/metaprompt-mcp "${port}:3333"
+}
+
+cmd_health() {
+  need curl
+  curl -sf "$(plane_base)/healthz"
+  echo
+}
+
+cmd_tools() {
+  local dry=0
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry=1
+    shift
+  fi
+  [[ $# -eq 0 ]] || die "usage: metaprompt tools [--dry-run]"
+  if [[ "${dry}" -eq 1 ]]; then
+    mcp_rpc tools/list '{}' 1
+    return 0
+  fi
+  mcp_rpc tools/list '{}' 0 | python3 -c 'import json,sys
+data=json.load(sys.stdin)
+tools=data.get("tools", data if isinstance(data, list) else [])
+for t in tools:
+    print(t["name"] if isinstance(t, dict) else t)
+'
+}
+
+cmd_call() {
+  local dry=0 name="" json=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run) dry=1; shift ;;
+      *)
+        if [[ -z "${name}" ]]; then
+          name="$1"
+        elif [[ -z "${json}" ]]; then
+          json="$1"
+        else
+          die "usage: metaprompt call [--dry-run] <tool> [json]"
+        fi
+        shift
+        ;;
+    esac
+  done
+  [[ -n "${name}" ]] || die "usage: metaprompt call [--dry-run] <tool> [json]"
+  local args='{}'
+  if [[ -n "${json}" ]]; then
+    args="$(json_object "${json}")" || die "call arguments must be JSON"
+  fi
+  mcp_rpc tools/call "$(python3 -c 'import json,sys; print(json.dumps({"name":sys.argv[1],"arguments":json.loads(sys.argv[2])}))' "${name}" "${args}")" "${dry}"
+}
+
+cmd_session() {
+  local harness="session"
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    python3 -c 'import json,sys; json.dump({"harness":sys.argv[1],"repo":"app","storage":"pvc"}, sys.stdout, indent=2); print()' "${2:-session}"
+    return 0
+  fi
+  [[ $# -le 1 ]] || die "usage: metaprompt session [harness]"
+  harness="${1:-session}"
+  run_script session-up.sh "${harness}"
+}
+
+run_create_args() {
+  local harness="" repo="app" prompt="" storage="" model=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --harness)
+        harness="${2:-}"
+        shift 2
+        ;;
+      --repo)
+        repo="${2:-}"
+        shift 2
+        ;;
+      --prompt)
+        prompt="${2:-}"
+        shift 2
+        ;;
+      --storage)
+        storage="${2:-}"
+        shift 2
+        ;;
+      --model)
+        model="${2:-}"
+        shift 2
+        ;;
+      *)
+        die "usage: metaprompt run create --harness NAME [--repo app] [--prompt TEXT] [--storage tmpfs|pvc] [--model NAME]"
+        ;;
+    esac
+  done
+  [[ -n "${harness}" ]] || die "run create needs --harness"
+  METAPROMPT_RC_HARNESS="${harness}" \
+  METAPROMPT_RC_REPO="${repo}" \
+  METAPROMPT_RC_PROMPT="${prompt}" \
+  METAPROMPT_RC_STORAGE="${storage}" \
+  METAPROMPT_RC_MODEL="${model}" \
+  python3 - <<'PY'
+import json, os
+out = {"harness": os.environ["METAPROMPT_RC_HARNESS"], "repo": os.environ["METAPROMPT_RC_REPO"]}
+if os.environ.get("METAPROMPT_RC_PROMPT"):
+    out["prompt"] = os.environ["METAPROMPT_RC_PROMPT"]
+if os.environ.get("METAPROMPT_RC_STORAGE"):
+    out["storage"] = os.environ["METAPROMPT_RC_STORAGE"]
+if os.environ.get("METAPROMPT_RC_MODEL"):
+    out["model"] = os.environ["METAPROMPT_RC_MODEL"]
+print(json.dumps(out))
+PY
+}
+
+cmd_run() {
+  local dry=0
+  local parsed=()
+  while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "--dry-run" ]]; then
+      dry=1
+    else
+      parsed+=("$1")
+    fi
+    shift
+  done
+  set -- "${parsed[@]}"
+  local op="${1:-}"
+  [[ -n "${op}" ]] || die "usage: metaprompt run create|get|list|logs|wait|kill|result …"
+  shift
+  case "${op}" in
+    create)
+      local args
+      args="$(run_create_args "$@")"
+      mcp_rpc tools/call "$(python3 -c 'import json,sys; print(json.dumps({"name":"run.create","arguments":json.loads(sys.argv[1])}))' "${args}")" "${dry}"
+      ;;
+    list)
+      [[ $# -eq 0 ]] || die "usage: metaprompt run list"
+      mcp_rpc tools/call '{"name":"run.list","arguments":{}}' "${dry}"
+      ;;
+    get | logs | wait | kill | result)
+      local id="${1:-}"
+      [[ -n "${id}" ]] || die "usage: metaprompt run ${op} <runId>"
+      shift
+      [[ $# -eq 0 ]] || die "usage: metaprompt run ${op} <runId>"
+      mcp_rpc tools/call "$(python3 -c 'import json,sys; print(json.dumps({"name":"run."+sys.argv[1],"arguments":{"runId":sys.argv[2]}}))' "${op}" "${id}")" "${dry}"
+      ;;
+    *)
+      die "usage: metaprompt run create|get|list|logs|wait|kill|result …"
+      ;;
+  esac
+}
+
+main() {
+  if [[ $# -eq 0 ]]; then
+    usage >&2
+    exit 2
+  fi
+  case "$1" in
+    -h | --help | help)
+      usage
+      return 0
+      ;;
+    -v | --version | version)
+      cmd_version
+      return 0
+      ;;
+  esac
+  wrap_cluster "$@"
+  case "$1" in
+    up) shift; cmd_up "$@" ;;
+    down) shift; cmd_down "$@" ;;
+    install) shift; cmd_install "$@" ;;
+    status) shift; cmd_status "$@" ;;
+    smoke) shift; cmd_smoke "$@" ;;
+    forward | port-forward) shift; cmd_forward "$@" ;;
+    health | healthz) shift; cmd_health "$@" ;;
+    tools) shift; cmd_tools "$@" ;;
+    call) shift; cmd_call "$@" ;;
+    session) shift; cmd_session "$@" ;;
+    run) shift; cmd_run "$@" ;;
+    *)
+      usage >&2
+      die "unknown command: $1"
+      ;;
+  esac
+}
+
+main "$@"

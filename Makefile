@@ -5,6 +5,7 @@ build:
 
 test:
 	bun run test
+	bash cli/metaprompt.test.sh
 
 typecheck:
 	bun run typecheck
@@ -13,10 +14,10 @@ images:
 	docker buildx bake
 
 k3s-up:
-	bash scripts/k3s-up.sh
+	bash cli/metaprompt up
 
 k3s-down:
-	bash scripts/k3s-down.sh
+	bash cli/metaprompt down
 
 clanker-up:
 	bash scripts/clanker-up.sh
@@ -25,7 +26,7 @@ clanker-down:
 	bash scripts/clanker-down.sh
 
 bootstrap:
-	bash scripts/bootstrap.sh --values deploy/chart/values-k3s.yaml
+	bash cli/metaprompt install k3s
 
 sync-site:
 	bash scripts/sync-site.sh
@@ -34,4 +35,4 @@ smoke:
 	bash scripts/smoke.sh
 
 cluster-smoke:
-	bash scripts/cluster-smoke.sh
+	bash cli/metaprompt smoke

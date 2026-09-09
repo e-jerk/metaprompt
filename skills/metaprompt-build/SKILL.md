@@ -33,7 +33,7 @@ container image ls
 docker buildx bake
 ```
 
-Targets: `mcp`, `runner`, `stub`, `opencode`, `claude-code`, `codex`, `cursor`.
+Targets: `mcp`, `runner`, `stub`, `opencode`, `claude-code`, `codex`, `cursor`, `cli`.
 Images: `ghcr.io/e-jerk/metaprompt/<name>:latest` (also tagged with the git SHA when CI runs).
 
 Single target:

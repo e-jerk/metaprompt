@@ -10,6 +10,8 @@ The parent is whoever called run.create. Every child is a Kubernetes Job. Runtim
 - [AGENTS.md](https://metaprom.pt/AGENTS.md): stub that points at implement.md
 - [Setup router](https://metaprom.pt/setup.md): pick an install playbook
 
+CLI (bash, Homebrew): `brew tap e-jerk/metaprompt https://github.com/e-jerk/metaprompt && brew install --HEAD metaprompt`. Cluster commands run in `ghcr.io/e-jerk/metaprompt/cli` (`docker run` or Apple `container run`). `metaprompt up` installs a local cluster; `metaprompt install` is BYO kubecontext. Checkout: `./cli/metaprompt`.
+
 ## Install playbooks
 
 - [Local k3s / k3d](https://metaprom.pt/setup/k3s.md)

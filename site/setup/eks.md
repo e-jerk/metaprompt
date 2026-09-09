@@ -93,10 +93,16 @@ The Job service account needs those AgentCore actions. The plane does not invoke
 ## Commands
 
 ```bash
-./scripts/bootstrap.sh --values deploy/chart/values-eks.yaml
+brew tap e-jerk/metaprompt https://github.com/e-jerk/metaprompt
+brew install --HEAD metaprompt
+# BYO EKS kubecontext. CLI helm/kubectl run in ghcr.io/e-jerk/metaprompt/cli.
+# edit a local values-eks.yaml (OIDC issuer, orgs, optional AgentCore)
+metaprompt install --values ./values-eks.yaml
+# or: metaprompt install eks
+# checkout: ./scripts/bootstrap.sh --values deploy/chart/values-eks.yaml
 ```
 
-No cluster yet? Create one with your usual AWS tools, then re-run bootstrap. Local laptop: `make k3s-up`. Clanker CLI is an optional extra, not a requirement.
+No cluster yet? Create one with your usual AWS tools, then re-run install. Local laptop: `metaprompt up`. Clanker CLI is an optional extra, not a requirement.
 
 ## Ready checks
 

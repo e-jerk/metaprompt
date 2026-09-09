@@ -4,6 +4,7 @@ Each catalog harness is an image on top of `runner`. Vendor Task / Agent / subag
 
 | Image | Path |
 | --- | --- |
+| `ghcr.io/e-jerk/metaprompt/cli` | `adapters/cli` (helm/kubectl/k3d; host `metaprompt` wraps `docker run` / `container run`) |
 | `ghcr.io/e-jerk/metaprompt/mcp` | `adapters/mcp` |
 | `ghcr.io/e-jerk/metaprompt/runner` | `adapters/runner` |
 | `ghcr.io/e-jerk/metaprompt/stub` | `adapters/stub` |
