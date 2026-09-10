@@ -193,6 +193,19 @@ export type GitSyncConfig = {
   hostPath: string;
 };
 
+/** Local-only hostPath mounts for harness login files. Paths only — never file contents. */
+export type LocalAuthMount = {
+  name: string;
+  hostPath: string;
+  mountPath: string;
+  harnesses: string[];
+  readOnly?: boolean;
+};
+
+export type LocalAuthConfig = {
+  mounts: LocalAuthMount[];
+};
+
 export type CatalogSkill = {
   name: string;
   content: string;
@@ -312,6 +325,7 @@ export type PlaneConfig = {
   repos: RepoSpec[];
   assets: AssetSpec[];
   gitSync?: GitSyncConfig;
+  localAuth?: LocalAuthConfig;
   skills: CatalogSkill[];
   mcpServers: CatalogMcp[];
   vcsSecrets: Record<string, { token?: string; sshKey?: string }>;

@@ -115,6 +115,9 @@ ensure_local_path() {
 }
 
 ensure_docker() {
+  if [[ ! -S /var/run/docker.sock && -S "${HOME}/.colima/default/docker.sock" ]]; then
+    export DOCKER_HOST="${DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+  fi
   if docker info >/dev/null 2>&1; then
     echo "Using existing Docker engine"
     return
@@ -282,19 +285,60 @@ up_k3c() {
   fi
 }
 
+cursor_cred_dir() {
+  printf '%s\n' "${METAPROMPT_CURSOR_CRED_DIR:-${HOME}/.metaprompt/creds/cursor}"
+}
+
+prepare_cursor_creds() {
+  mkdir -p "$(cursor_cred_dir)"
+  if bash "${ROOT}/scripts/materialize-cursor-auth.sh"; then
+    return 0
+  fi
+  echo "Continuing without Cursor CLI login; cursor Jobs will fail auth until you login." >&2
+}
+
+sync_cursor_creds_k3d() {
+  bash "${ROOT}/scripts/sync-local-auth.sh" || true
+}
+
+# Publish the MCP Service on 127.0.0.1:3333 via k3d's load balancer (not kubectl port-forward).
+ensure_k3d_plane_lb() {
+  local port="${METAPROMPT_LOCAL_PORT:-3333}"
+  local spec="127.0.0.1:${port}:3333@loadbalancer"
+  if k3d cluster list --no-headers 2>/dev/null | awk '{print $1}' | grep -qx "${CLUSTER}"; then
+    :
+  else
+    return 0
+  fi
+  if docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null | grep -E "k3d-${CLUSTER}-serverlb" | grep -q "${port}->3333"; then
+    echo "k3d load balancer already publishes 127.0.0.1:${port} → 3333"
+    return 0
+  fi
+  echo "Adding k3d load-balancer port ${spec}…"
+  k3d cluster edit "${CLUSTER}" --port-add "${spec}" || \
+    k3d cluster edit "k3d-${CLUSTER}-serverlb" --port-add "${spec}"
+}
+
 up_k3d() {
   ensure_docker
   install_k3d
+  prepare_cursor_creds
+  local creds
+  creds="$(cursor_cred_dir)"
   if k3d cluster list --no-headers 2>/dev/null | awk '{print $1}' | grep -qx "${CLUSTER}"; then
     echo "Cluster ${CLUSTER} already exists"
+    sync_cursor_creds_k3d
   else
     echo "Creating k3d cluster ${CLUSTER}…"
     local create=(k3d cluster create "${CLUSTER}" --agents 1 --wait)
+    create+=(--volume "${creds}:/var/lib/metaprompt/creds/cursor")
+    create+=(--port "127.0.0.1:${METAPROMPT_LOCAL_PORT:-3333}:3333@loadbalancer")
     if [[ -n "${METAPROMPT_IN_IMAGE:-}" ]]; then
       create+=(--k3s-arg "--tls-san=k3d-${CLUSTER}-serverlb@server:0")
     fi
     "${create[@]}"
   fi
+  ensure_k3d_plane_lb
   if [[ -n "${METAPROMPT_IN_IMAGE:-}" ]]; then
     docker network connect "k3d-${CLUSTER}" "$(hostname)" 2>/dev/null || true
     local kube="${KUBECONFIG:-${HOME}/.kube/config}"

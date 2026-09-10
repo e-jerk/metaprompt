@@ -148,4 +148,67 @@ describe("HarnessJob projection", () => {
     );
     expect(() => assertNoSecretsInSpec(spec)).not.toThrow();
   });
+
+  it("mounts localAuth hostPaths on cursor Jobs and sets file credential store", async () => {
+    const plane = new Plane(
+      defaultConfig({
+        bedrock: { enabled: false, region: "us-east-1" },
+        localAuth: {
+          mounts: [
+            {
+              name: "cursor",
+              hostPath: "/var/lib/metaprompt/creds/cursor",
+              mountPath: "/root/.cursor",
+              harnesses: ["cursor", "session"],
+            },
+            {
+              name: "cursor-xdg",
+              hostPath: "/var/lib/metaprompt/creds/cursor",
+              mountPath: "/root/.config/cursor",
+              harnesses: ["cursor", "session"],
+            },
+          ],
+        },
+      }),
+    );
+    const run = await plane.createRun(alice(plane), {
+      harness: "cursor",
+      repo: "app",
+      prompt: "hi",
+      storage: "tmpfs",
+    });
+    const spec = specFromRun(run, plane.config);
+    expect(spec.localAuthMounts).toEqual([
+      {
+        name: "cursor",
+        hostPath: "/var/lib/metaprompt/creds/cursor",
+        mountPath: "/root/.cursor",
+        readOnly: true,
+      },
+      {
+        name: "cursor-xdg",
+        hostPath: "/var/lib/metaprompt/creds/cursor",
+        mountPath: "/root/.config/cursor",
+        readOnly: true,
+      },
+    ]);
+    const extra = extraPodVolumes(spec);
+    expect(extra.volumes).toEqual(
+      expect.arrayContaining([
+        {
+          name: "auth-cursor",
+          hostPath: { path: "/var/lib/metaprompt/creds/cursor", type: "DirectoryOrCreate" },
+        },
+        {
+          name: "auth-cursor-xdg",
+          hostPath: { path: "/var/lib/metaprompt/creds/cursor", type: "DirectoryOrCreate" },
+        },
+      ]),
+    );
+    const job = jobManifest(spec);
+    expect(job.spec.template.spec.containers[0].env).toEqual(
+      expect.arrayContaining([{ name: "AGENT_CLI_CREDENTIAL_STORE", value: "file" }]),
+    );
+    expect(JSON.stringify(spec)).not.toMatch(/Bearer |sk-|BEGIN /);
+  });
 });

@@ -93,6 +93,14 @@ export function specFromRun(run: Run, config: PlaneConfig, extras?: StartExtras)
       enabled: Boolean(config.gitSync?.enabled || process.env.METAPROMPT_GITSYNC === "1"),
       hostPath: process.env.METAPROMPT_GITSYNC_HOSTPATH ?? config.gitSync?.hostPath ?? "/var/lib/metaprompt/repos",
     },
+    localAuthMounts: (config.localAuth?.mounts ?? [])
+      .filter((m) => m.harnesses.includes(run.harness) || m.harnesses.includes("*"))
+      .map((m) => ({
+        name: m.name,
+        hostPath: m.hostPath,
+        mountPath: m.mountPath,
+        readOnly: m.readOnly !== false,
+      })),
     lowerdir: run.repo ? `/repos/${run.repo}/current` : "/repos/current",
     childMcpPort: Number(process.env.METAPROMPT_CHILD_MCP_PORT ?? 3334),
     ...(run.harness === "agentcore"
@@ -188,6 +196,9 @@ export function envFromSpec(spec: HarnessJobSpec): Record<string, { value?: stri
     METAPROMPT_LOWERDIR: { value: spec.lowerdir ?? "/repos/current" },
     METAPROMPT_CHILD_MCP_URL: { value: `http://127.0.0.1:${spec.childMcpPort ?? 3334}` },
     METAPROMPT_CHILD_MCP_PORT: { value: String(spec.childMcpPort ?? 3334) },
+    ...(spec.localAuthMounts?.some((m) => m.mountPath.includes("cursor") || m.name.includes("cursor"))
+      ? { AGENT_CLI_CREDENTIAL_STORE: { value: "file" } }
+      : {}),
     ...(spec.agentcore
       ? {
           AWS_REGION: { value: spec.agentcore.region },
@@ -328,6 +339,18 @@ export function extraPodVolumes(spec: HarnessJobSpec): {
       secret: { secretName: "metaprompt-opencode", optional: true },
     });
     volumeMounts.push({ name: "opencode-auth", mountPath: "/root/.local/share/opencode", readOnly: true });
+  }
+  for (const mount of spec.localAuthMounts ?? []) {
+    const volName = dnsName(`auth-${mount.name}`);
+    volumes.push({
+      name: volName,
+      hostPath: { path: mount.hostPath, type: "DirectoryOrCreate" },
+    });
+    volumeMounts.push({
+      name: volName,
+      mountPath: mount.mountPath,
+      readOnly: mount.readOnly !== false,
+    });
   }
   for (const asset of spec.assetMounts ?? []) {
     const volName = dnsName(`asset-${asset.name}`);

@@ -25,6 +25,11 @@ bedrock:
 image:
   pullPolicy: IfNotPresent
 
+# k3d serverlb publishes 127.0.0.1:3333 → this Service. No kubectl port-forward.
+mcp:
+  service:
+    type: LoadBalancer
+
 # Local fixture. Jobs that pass assets: ["eval-set"] mount this hostPath read-only.
 assets:
   - name: eval-set
@@ -35,6 +40,21 @@ assets:
 # e-jerk/metaprompt is not required for local MCP/Job smoke. Enable to mount /repos as Job lowerdir.
 gitSync:
   enabled: false
+
+# Cursor CLI login from the laptop. `scripts/materialize-cursor-auth.sh` writes
+# ~/.metaprompt/creds/cursor; k3d bind-mounts that dir onto the node.
+localAuth:
+  mounts:
+    # Writable: `agent` also creates ~/.cursor/projects. Creds are the same dir.
+    - name: cursor
+      hostPath: /var/lib/metaprompt/creds/cursor
+      mountPath: /root/.cursor
+      harnesses: [cursor, session]
+      readOnly: false
+    - name: cursor-xdg
+      hostPath: /var/lib/metaprompt/creds/cursor
+      mountPath: /root/.config/cursor
+      harnesses: [cursor, session]
 
 memory:
   enabled: true

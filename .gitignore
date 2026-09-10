@@ -12,5 +12,12 @@ tmp
 *.log
 .idea
 .vscode
+# IDE/session junk. Keep skill pointers so Cursor/Grok see skills/ in this checkout.
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
+.grok/*
+!.grok/skills/
+!.grok/skills/**
 !site/CNAME
 *.bun-build

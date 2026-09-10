@@ -18,18 +18,20 @@ if kubectl -n "${NS}" get sts metaprompt-postgres >/dev/null 2>&1; then
   kubectl -n "${NS}" rollout status sts/metaprompt-postgres --timeout=180s
 fi
 
-PF_LOG="$(mktemp)"
-kubectl -n "${NS}" port-forward svc/metaprompt-mcp "${LOCAL_PORT}:3333" >"${PF_LOG}" 2>&1 &
-PF_PID=$!
-cleanup() { kill "${PF_PID}" >/dev/null 2>&1 || true; }
+PF_PID=""
+cleanup() { [[ -n "${PF_PID}" ]] && kill "${PF_PID}" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
-
-for _ in $(seq 1 30); do
-  if curl -sf "http://127.0.0.1:${LOCAL_PORT}/healthz" >/dev/null; then
-    break
-  fi
-  sleep 1
-done
+if ! curl -sf "http://127.0.0.1:${LOCAL_PORT}/healthz" >/dev/null; then
+  PF_LOG="$(mktemp)"
+  kubectl -n "${NS}" port-forward svc/metaprompt-mcp "${LOCAL_PORT}:3333" >"${PF_LOG}" 2>&1 &
+  PF_PID=$!
+  for _ in $(seq 1 30); do
+    if curl -sf "http://127.0.0.1:${LOCAL_PORT}/healthz" >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+fi
 curl -sf "http://127.0.0.1:${LOCAL_PORT}/healthz" | grep -q '"ok":true'
 echo "healthz ok"
 

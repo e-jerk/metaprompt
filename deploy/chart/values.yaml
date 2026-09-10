@@ -10,6 +10,8 @@ mcp:
   replicaCount: 1
   port: 3333
   childPort: 3334
+  service:
+    type: ClusterIP
 
 auth:
   oidc:
@@ -118,6 +120,10 @@ gitSync:
   image: registry.k8s.io/git-sync/git-sync:v4.4.0
   hostPath: /var/lib/metaprompt/repos
   staleWorktreeTimeout: 24h
+
+# Local k3s only. hostPath of harness login dirs (never file contents in Helm/Secrets).
+localAuth:
+  mounts: []
 
 networkPolicy:
   enabled: false

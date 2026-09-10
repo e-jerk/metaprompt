@@ -32,7 +32,7 @@ Cluster
   install --values FILE
   status                     Deployments, Helm release, and /healthz
   smoke                      Live cluster smoke (HTTP plane + Jobs)
-  forward                    Port-forward svc/metaprompt-mcp (foreground)
+  forward                    Port-forward svc/metaprompt-mcp (no-op if 127.0.0.1 already serves /healthz)
 
 Plane (needs forward, or METAPROMPT_URL)
   health                     GET /healthz
@@ -445,7 +445,7 @@ cmd_status() {
   if curl -sf "$(plane_base)/healthz" >/dev/null; then
     echo "healthz ok"
   else
-    echo "healthz not reachable at $(plane_base)/healthz — run: metaprompt forward"
+    echo "healthz not reachable at $(plane_base)/healthz — k3d should publish 127.0.0.1:${METAPROMPT_LOCAL_PORT:-3333}; or: metaprompt forward"
   fi
 }
 
@@ -458,6 +458,10 @@ cmd_forward() {
   need kubectl
   local port="${METAPROMPT_LOCAL_PORT:-3333}"
   echo "MCP $(plane_base)/mcp  healthz $(plane_base)/healthz" >&2
+  if curl -sf "$(plane_base)/healthz" >/dev/null; then
+    echo "already listening (LoadBalancer or existing forward)"
+    return 0
+  fi
   kube port-forward svc/metaprompt-mcp "${port}:3333"
 }
 

@@ -244,5 +244,6 @@ export function defaultConfig(overrides: Partial<PlaneConfig> = {}): PlaneConfig
     github: overrides.github,
     oidcApps: overrides.oidcApps ?? { apps: [] },
     gitSync: overrides.gitSync ?? { enabled: false, hostPath: "/var/lib/metaprompt/repos" },
+    localAuth: overrides.localAuth,
   };
 }

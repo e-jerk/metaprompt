@@ -48,6 +48,7 @@ data:
       "gitSync": {
         "enabled": {{ .Values.gitSync.enabled }},
         "hostPath": {{ .Values.gitSync.hostPath | quote }}
-      }{{- if .Values.assets }},
+      },
+      "localAuth": {{ .Values.localAuth | default (dict "mounts" list) | toJson }}{{- if .Values.assets }},
       "assets": {{ .Values.assets | toJson }}{{- end }}
     }

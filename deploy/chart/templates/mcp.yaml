@@ -146,6 +146,7 @@ metadata:
   labels:
     {{- include "metaprompt.labels" . | nindent 4 }}
 spec:
+  type: {{ (.Values.mcp.service | default dict).type | default "ClusterIP" }}
   selector:
     app: metaprompt-mcp
   ports:

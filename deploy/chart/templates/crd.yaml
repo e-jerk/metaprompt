@@ -111,6 +111,16 @@ spec:
                   properties:
                     enabled: { type: boolean }
                     hostPath: { type: string }
+                localAuthMounts:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, hostPath, mountPath]
+                    properties:
+                      name: { type: string }
+                      hostPath: { type: string }
+                      mountPath: { type: string }
+                      readOnly: { type: boolean }
                 lowerdir: { type: string }
                 childMcpPort: { type: integer }
             status:

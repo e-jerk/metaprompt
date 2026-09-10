@@ -69,6 +69,8 @@ kubectl -n metaprompt get svc metaprompt-mcp
 
 Local memories use Postgres + pgvector (`memory.enabled` in `values-k3s.yaml`). The plane MCP gets `DATABASE_URL`; Jobs never do. Embedding default is `hash` (no API key).
 
+**Cursor login.** Local k3s mounts `~/.metaprompt/creds/cursor` into cursor/session pods (`/root/.cursor`, `/root/.config/cursor`). That is a hostPath, not a Kubernetes Secret. `scripts/materialize-cursor-auth.sh` copies a Cursor **CLI** login (`~/.cursor/auth.json`, `CURSOR_API_KEY`, or keychain `cursor-api-key`). The IDE session is not enough — workers run `agent`, which wants `agent login` or `CURSOR_API_KEY`. After login: `scripts/sync-local-auth.sh`. Do not print the files.
+
 **Assets.** `run.create` / `session.create` may pass `assets: ["eval-set"]` after `asset.list`. The plane checks catalog `readers`, then the Job/session pod mounts the volume read-only (`pvc:…`, `hostPath:…`, `configMap:…`, `secret:…`, `emptyDir` / `emptyDir:Memory`). Local k3s uses `hostPath:/var/lib/metaprompt/assets/eval-set`.
 
 **Git-sync.** When `gitSync.enabled` is true, a DaemonSet writes repo snapshots under `hostPath` (`/var/lib/metaprompt/repos/<name>/current`). Jobs mount that path at `/repos` and set `METAPROMPT_LOWERDIR=/repos/<repo>/current`. Local k3s leaves git-sync **off** so smoke does not need `e-jerk/metaprompt`.
@@ -79,9 +81,9 @@ Local memories use Postgres + pgvector (`memory.enabled` in `values-k3s.yaml`). 
 
 Stop on the first red. Run from the repo root.
 
-0. **Preflight** — `bun test` (or `make test`). Cluster Ready. Port-forward `svc/metaprompt-mcp 3333:3333` and `GET /healthz`. Tokens: `local-dev-token` (admin), `alice-token`, `bob-token`.
+0. **Preflight** — `bun test` (or `make test`). Cluster Ready. k3d publishes the MCP LoadBalancer on `127.0.0.1:3333` — `GET /healthz`. Tokens: `local-dev-token` (admin), `alice-token`, `bob-token`.
 1. **In-process** — slice tests plus `packages/mcp/src/memory.test.ts` (ACL, search rank, delete, empty/oversize). No cluster.
-2. **HTTP plane** — `packages/mcp/src/server.test.ts` against an in-process listener; live catalog/auth/party/cron/mint/memory also run in `scripts/cluster-smoke.sh` via the port-forward.
+2. **HTTP plane** — `packages/mcp/src/server.test.ts` against an in-process listener; live catalog/auth/party/cron/mint/memory also run in `scripts/cluster-smoke.sh` against `127.0.0.1:3333`.
 3. **Live Jobs** — `metaprompt smoke` (or `make cluster-smoke`): tmpfs Job + logs, PVC create/delete, bob denied until `run.share`, kill unblocks `run.wait`, `spawn:a,b` rollup, memory put/search across user/party/repo, identical stubs share `prefixHash`.
 
 Stub prompt verbs for Job-only plane calls: `exit:…`, `spawn:a,b`, `memory:…`, `sleep:N`.
@@ -90,11 +92,7 @@ Out of scope locally: vendor harnesses, Bedrock, OIDC, git-sync SHA rotation, Cl
 
 ## Attach a parent harness
 
-```bash
-metaprompt forward
-```
-
-MCP URL: `http://127.0.0.1:3333/mcp`
+MCP URL: `http://127.0.0.1:3333/mcp` (k3d LoadBalancer; `metaprompt forward` is only a fallback).
 
 Static tokens (k3s only):
 

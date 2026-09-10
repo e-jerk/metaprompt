@@ -163,5 +163,6 @@ export function loadConfig(): PlaneConfig {
         merged.gitSync?.hostPath ??
         "/var/lib/metaprompt/repos",
     },
+    localAuth: merged.localAuth,
   });
 }

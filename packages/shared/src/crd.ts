@@ -49,6 +49,12 @@ export type HarnessJobSpec = {
   tokenSecretRef: HarnessJobTokenRef;
   assetMounts?: AssetMount[];
   gitSync?: { enabled: boolean; hostPath: string };
+  localAuthMounts?: Array<{
+    name: string;
+    hostPath: string;
+    mountPath: string;
+    readOnly?: boolean;
+  }>;
   lowerdir?: string;
   childMcpPort?: number;
   agentcore?: {

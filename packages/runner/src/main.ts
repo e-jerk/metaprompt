@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { defaultHarnesses } from "@metaprompt/shared";
 import { commandFor } from "./adapters.js";
+import { applyLocalCursorAuth } from "./cursor-auth.js";
 import { startChildMcp } from "./child-mcp.js";
 import { materializePrefix } from "./prefix-files.js";
 import { emptyGitCredentialHelperEnv, jjColocate, pinAndOverlay } from "./workspace.js";
@@ -54,7 +55,12 @@ async function main() {
   };
   const { argv, env } = commandFor(harness, run as never, resume);
   const { spawn } = await import("node:child_process");
-  const childEnv = { ...emptyGitCredentialHelperEnv(), ...process.env, ...env, HOME: process.env.HOME ?? "/root" };
+  const childEnv = applyLocalCursorAuth({
+    ...emptyGitCredentialHelperEnv(),
+    ...process.env,
+    ...env,
+    HOME: process.env.HOME ?? "/root",
+  });
   const child =
     harness.name === "stub"
       ? spawn(process.execPath, [new URL("./stub.js", import.meta.url).pathname, ...argv.slice(1)], {
